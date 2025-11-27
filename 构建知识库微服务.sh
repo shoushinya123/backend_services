@@ -25,7 +25,7 @@ if [ "$1" == "--test" ]; then
     echo ""
     echo "🧪 步骤2: 运行测试..."
     export KNOWLEDGE_SERVICE_URL="http://localhost:8001"
-    export DASHSCOPE_API_KEY="${DASHSCOPE_API_KEY:-sk-e71bce7e15c6434790403d39c0e220af}"
+    export DASHSCOPE_API_KEY="${DASHSCOPE_API_KEY:-your-dashscope-api-key-here}"
     python3 test_knowledge_comprehensive.py
 fi
 
@@ -53,7 +53,7 @@ echo "=========================================="
 echo ""
 echo "启动服务:"
 echo "  export SERVER_PORT=8001"
-echo "  export DASHSCOPE_API_KEY='sk-e71bce7e15c6434790403d39c0e220af'"
+echo "  export DASHSCOPE_API_KEY='your-dashscope-api-key-here'"
 echo "  ./knowledge-service"
 echo ""
 echo "或使用Docker:"

@@ -18,7 +18,7 @@ services:
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
       KAFKA_BROKERS: host.docker.internal:19092
-      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-sk-e71bce7e15c6434790403d39c0e220af}
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY}
       DASHSCOPE_RERANK_MODEL: gte-rerank
       SERVER_PORT: 8001
     ports:

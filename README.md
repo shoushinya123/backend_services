@@ -24,9 +24,9 @@
 
 ### 方式1: 直接运行二进制
 ```bash
-cd ai-platform/backend
+cd backend_services
 export SERVER_PORT=8001
-export DASHSCOPE_API_KEY="sk-e71bce7e15c6434790403d39c0e220af"
+export DASHSCOPE_API_KEY="your-dashscope-api-key-here"
 ./knowledge-service
 ```
 
@@ -38,9 +38,9 @@ cd ai-platform/backend
 
 ### 方式3: Go运行
 ```bash
-cd ai-platform/backend
+cd backend_services
 export SERVER_PORT=8001
-export DASHSCOPE_API_KEY="sk-e71bce7e15c6434790403d39c0e220af"
+export DASHSCOPE_API_KEY="your-dashscope-api-key-here"
 go run cmd/knowledge/main.go
 ```
 
@@ -60,13 +60,13 @@ go run cmd/knowledge/main.go
 
 ### 构建镜像
 ```bash
-cd ai-platform/backend
-docker build -f Dockerfile.knowledge -t ai-xia-platform-knowledge-service:latest .
+cd backend_services
+docker build -f Dockerfile.knowledge -t ai-xia-services-knowledge:latest .
 ```
 
 ### 启动服务
 ```bash
-export DASHSCOPE_API_KEY="sk-e71bce7e15c6434790403d39c0e220af"
+export DASHSCOPE_API_KEY="your-dashscope-api-key-here"
 docker-compose -f docker-compose.knowledge.yml up -d
 ```
 
@@ -137,7 +137,7 @@ curl http://localhost:8001/health
 ### 完整测试
 ```bash
 export KNOWLEDGE_SERVICE_URL="http://localhost:8001"
-export DASHSCOPE_API_KEY="sk-e71bce7e15c6434790403d39c0e220af"
+export DASHSCOPE_API_KEY="your-dashscope-api-key-here"
 python3 test_knowledge_comprehensive.py
 ```
 
