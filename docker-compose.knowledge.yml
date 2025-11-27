@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  # 知识库微服务（仅此服务，基础设施复用现有的）
+  ai-xia-services-knowledge:
+    build:
+      context: .
+      dockerfile: Dockerfile.knowledge
+    container_name: ai-xia-services-knowledge
+    environment:
+      # 连接到现有的基础设施（使用host网络或服务名）
+      DATABASE_URL: postgresql://postgres:postgres@host.docker.internal:5432/aihub?sslmode=disable
+      REDIS_HOST: host.docker.internal
+      REDIS_PORT: 6379
+      ELASTICSEARCH_URL: http://host.docker.internal:9200
+      QDRANT_URL: http://host.docker.internal:6333
+      MINIO_ENDPOINT: host.docker.internal:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      KAFKA_BROKERS: host.docker.internal:19092
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-sk-e71bce7e15c6434790403d39c0e220af}
+      DASHSCOPE_RERANK_MODEL: gte-rerank
+      SERVER_PORT: 8001
+    ports:
+      - "8001:8001"
+    network_mode: "host"  # 使用host网络模式，直接访问本地基础设施
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
