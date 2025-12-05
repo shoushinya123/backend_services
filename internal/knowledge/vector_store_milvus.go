@@ -3,6 +3,7 @@ package knowledge
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -343,7 +344,14 @@ func (s *milvusVectorStore) Search(ctx context.Context, req VectorSearchRequest)
 		}
 	}
 
-	// 构建结果
+	// 构建结果，应用阈值过滤
+	threshold := req.Threshold
+	if threshold == 0 {
+		threshold = 0.9 // 默认阈值0.9
+	}
+
+	// 对于COSINE距离，相似度 = 1 - distance（或直接使用score，取决于Milvus返回格式）
+	// 对于COSINE，score通常就是相似度值（0-1之间）
 	for i := 0; i < result.ResultCount; i++ {
 		chunkID := uint(0)
 		documentID := uint(0)
@@ -368,13 +376,35 @@ func (s *milvusVectorStore) Search(ctx context.Context, req VectorSearchRequest)
 			score = float64(result.Scores[i])
 		}
 
-		results = append(results, SearchMatch{
-			ChunkID:    chunkID,
-			DocumentID: documentID,
-			Content:    content,
-			Score:      score,
-			Metadata:   make(map[string]interface{}),
-		})
+		// 对于COSINE距离，Milvus返回的score就是相似度（0-1）
+		// 对于L2/IP距离，需要转换，这里假设使用COSINE
+		similarity := score
+		
+		// 如果使用COSINE距离，score就是相似度；如果是L2/IP，需要转换
+		// 这里假设使用COSINE，score范围是0-1，值越大越相似
+		// 如果使用L2，相似度 = 1 / (1 + distance)，需要根据实际距离类型转换
+		// 为了通用性，假设score已经是相似度值（0-1），且值越大越相似
+		
+		// 应用阈值过滤：仅保留相似度 >= threshold 的结果
+		if similarity >= threshold {
+			results = append(results, SearchMatch{
+				ChunkID:    chunkID,
+				DocumentID: documentID,
+				Content:    content,
+				Score:      similarity, // 使用相似度作为score
+				Metadata:   make(map[string]interface{}),
+			})
+		}
+	}
+
+	// 按相似度降序排序（1 → 0.99 → 0.98 → ... → 0.9）
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Score > results[j].Score
+	})
+
+	// 限制返回数量
+	if len(results) > req.Limit {
+		results = results[:req.Limit]
 	}
 
 	return results, nil

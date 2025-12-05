@@ -220,23 +220,39 @@ func (e *ElasticsearchIndexer) Search(ctx context.Context, req FulltextSearchReq
 		return nil, err
 	}
 
+	// 优先使用 match_phrase 精确短语匹配，无结果则降级为 match 模糊匹配
+	// 使用 should 子句，match_phrase 的 boost 更高，优先匹配
 	boolQuery := map[string]interface{}{
 		"must": []interface{}{
-			map[string]interface{}{
-				"match": map[string]interface{}{
-					"content": map[string]interface{}{
-						"query":                req.Query,
-						"operator":             "and",
-						"minimum_should_match": "70%",
-					},
-				},
-			},
 			map[string]interface{}{
 				"term": map[string]interface{}{
 					"knowledge_base_id": req.KnowledgeBaseID,
 				},
 			},
 		},
+		"should": []interface{}{
+			// 精确短语匹配（优先级最高）
+			map[string]interface{}{
+				"match_phrase": map[string]interface{}{
+					"content": map[string]interface{}{
+						"query": req.Query,
+						"boost": 3.0, // 提高精确匹配的权重
+					},
+				},
+			},
+			// 模糊关键词匹配（降级策略）
+			map[string]interface{}{
+				"match": map[string]interface{}{
+					"content": map[string]interface{}{
+						"query":                req.Query,
+						"operator":             "and",
+						"minimum_should_match": "70%",
+						"boost":               1.0,
+					},
+				},
+			},
+		},
+		"minimum_should_match": 1, // 至少匹配一个 should 子句
 	}
 
 	body := map[string]interface{}{

@@ -676,8 +676,13 @@ func (s *KnowledgeService) ProcessDocuments(kbID, userID uint) error {
 	return nil
 }
 
-// SearchKnowledgeBase 搜索知识库（带Redis缓存）
+// SearchKnowledgeBase 搜索知识库（带Redis缓存，兼容旧接口）
 func (s *KnowledgeService) SearchKnowledgeBase(kbID, userID uint, query string, topK int) ([]map[string]interface{}, error) {
+	return s.SearchKnowledgeBaseWithMode(kbID, userID, query, topK, "auto", 0.9)
+}
+
+// SearchKnowledgeBaseWithMode 搜索知识库（支持新模式参数）
+func (s *KnowledgeService) SearchKnowledgeBaseWithMode(kbID, userID uint, query string, topK int, mode string, vectorThreshold float64) ([]map[string]interface{}, error) {
 	// 检查权限
 	var kb models.KnowledgeBase
 	if err := database.DB.Where("knowledge_base_id = ? AND (owner_id = ? OR is_public = ?)", kbID, userID, true).
@@ -687,10 +692,11 @@ func (s *KnowledgeService) SearchKnowledgeBase(kbID, userID uint, query string, 
 
 	// 尝试从Redis缓存获取
 	redisService := middleware.NewRedisService()
-	cacheKey := fmt.Sprintf("knowledge:search:%d:%s:%d", kbID, query, topK)
+	// 构建缓存key（包含mode和threshold）
+	cacheKey := fmt.Sprintf("knowledge:search:%d:%s:%d:%s:%.2f", kbID, query, topK, mode, vectorThreshold)
 	if cached, err := redisService.GetCache(cacheKey); err == nil {
 		if results, ok := cached.([]map[string]interface{}); ok {
-			log.Printf("[knowledge] 从缓存获取搜索结果: KB=%d, Query=%s", kbID, query)
+			log.Printf("[knowledge] 从缓存获取搜索结果: KB=%d, Query=%s, Mode=%s", kbID, query, mode)
 			return results, nil
 		}
 	}
@@ -722,15 +728,16 @@ func (s *KnowledgeService) SearchKnowledgeBase(kbID, userID uint, query string, 
 	}
 
 	ctx := context.Background()
-	searchType := "hybrid"
 	if s.searchEngine == nil {
 		return nil, fmt.Errorf("搜索引擎未配置")
 	}
+	
 	matches, err := s.searchEngine.Search(ctx, knowledge.HybridSearchRequest{
 		KnowledgeBaseID: kbID,
 		Query:           query,
 		Limit:           topK,
-		SearchType:      searchType,
+		Mode:            mode,
+		VectorThreshold: vectorThreshold,
 	})
 	if err != nil {
 		return nil, err
@@ -761,8 +768,8 @@ func (s *KnowledgeService) SearchKnowledgeBase(kbID, userID uint, query string, 
 	return results, nil
 }
 
-// SearchAllKnowledgeBases 在用户可访问的所有知识库中搜索
-func (s *KnowledgeService) SearchAllKnowledgeBases(userID uint, query string, topK int) ([]map[string]interface{}, error) {
+// SearchAllKnowledgeBases 在用户可访问的所有知识库中搜索（支持新模式参数）
+func (s *KnowledgeService) SearchAllKnowledgeBases(userID uint, query string, topK int, mode string, vectorThreshold float64) ([]map[string]interface{}, error) {
 	if topK <= 0 {
 		topK = 5
 	}
@@ -781,7 +788,7 @@ func (s *KnowledgeService) SearchAllKnowledgeBases(userID uint, query string, to
 
 	var allResults []map[string]interface{}
 	for _, kb := range bases {
-		results, err := s.SearchKnowledgeBase(kb.KnowledgeBaseID, userID, query, topK)
+		results, err := s.SearchKnowledgeBaseWithMode(kb.KnowledgeBaseID, userID, query, topK, mode, vectorThreshold)
 		if err != nil {
 			log.Printf("[search] 搜索知识库 %d 失败: %v", kb.KnowledgeBaseID, err)
 			continue

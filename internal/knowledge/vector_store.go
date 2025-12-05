@@ -17,6 +17,7 @@ type VectorSearchRequest struct {
 	QueryEmbedding  []float32
 	Limit           int
 	CandidateLimit  int
+	Threshold       float64 // 相似度阈值，仅返回 >= Threshold 的结果
 }
 
 // VectorStore 向量存储抽象

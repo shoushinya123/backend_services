@@ -79,6 +79,12 @@ func (s *DatabaseVectorStore) Search(ctx context.Context, req VectorSearchReques
 		return nil, fmt.Errorf("query embedding norm is zero")
 	}
 
+	// 应用阈值过滤
+	threshold := req.Threshold
+	if threshold == 0 {
+		threshold = 0.9 // 默认阈值0.9
+	}
+
 	results := make([]SearchMatch, 0, req.Limit)
 	for _, row := range rows {
 		var embedding []float32
@@ -90,16 +96,20 @@ func (s *DatabaseVectorStore) Search(ctx context.Context, req VectorSearchReques
 			_ = json.Unmarshal([]byte(row.MetadataJSON), &metadata)
 		}
 		score := cosineSimilarity(req.QueryEmbedding, embedding, queryNorm)
-		results = append(results, SearchMatch{
-			ChunkID:    row.ChunkID,
-			DocumentID: row.DocumentID,
-			Content:    row.Content,
-			Score:      score,
-			Metadata:   metadata,
-		})
+		
+		// 仅保留相似度 >= threshold 的结果
+		if score >= threshold {
+			results = append(results, SearchMatch{
+				ChunkID:    row.ChunkID,
+				DocumentID: row.DocumentID,
+				Content:    row.Content,
+				Score:      score,
+				Metadata:   metadata,
+			})
+		}
 	}
 
-	// 排序
+	// 按相似度降序排序（1 → 0.99 → 0.98 → ... → 0.9）
 	sortMatchesByScore(results)
 	if len(results) > req.Limit {
 		results = results[:req.Limit]
