@@ -35,20 +35,23 @@ func NewMinIOService() (*MinIOService, error) {
 		return nil, fmt.Errorf("minio endpoint not configured")
 	}
 
+	// 设置默认 bucket（如果未配置）
+	if cfg.Bucket == "" {
+		cfg.Bucket = "knowledge"
+	}
+
 	// 初始化MinIO客户端
 	// 如果endpoint不包含协议，添加http://
 	endpoint := cfg.Endpoint
-	if !strings.HasPrefix(endpoint, "http://") && !strings.HasPrefix(endpoint, "https://") {
-		if cfg.UseSSL {
-			endpoint = "https://" + endpoint
-		} else {
-			endpoint = "http://" + endpoint
-		}
-	}
+	// 移除协议前缀（如果有），因为 minio.New 不需要协议
+	endpoint = strings.TrimPrefix(endpoint, "http://")
+	endpoint = strings.TrimPrefix(endpoint, "https://")
 	
-	client, err := minio.New(cfg.Endpoint, &minio.Options{
+	// 创建客户端（使用原始 endpoint，不包含协议）
+	client, err := minio.New(endpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(cfg.AccessKey, cfg.SecretKey, ""),
 		Secure: cfg.UseSSL,
+		Region: "", // MinIO 不需要 region
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create minio client: %w", err)
@@ -59,17 +62,49 @@ func NewMinIOService() (*MinIOService, error) {
 		config: cfg,
 	}
 
-	// 确保bucket存在
-	ctx := context.Background()
-	exists, err := client.BucketExists(ctx, cfg.Bucket)
-	if err != nil {
-		return nil, fmt.Errorf("failed to check bucket existence: %w", err)
+	// 确保bucket存在（带重试逻辑）
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// 重试3次
+	var exists bool
+	var bucketErr error
+	for i := 0; i < 3; i++ {
+		exists, bucketErr = client.BucketExists(ctx, cfg.Bucket)
+		if bucketErr == nil {
+			break
+		}
+		if i < 2 {
+			time.Sleep(time.Second * time.Duration(i+1))
+		}
+	}
+
+	if bucketErr != nil {
+		return nil, fmt.Errorf("failed to check bucket existence after retries: %w", bucketErr)
 	}
 
 	if !exists {
-		err = client.MakeBucket(ctx, cfg.Bucket, minio.MakeBucketOptions{})
-		if err != nil {
-			return nil, fmt.Errorf("failed to create bucket: %w", err)
+		// 创建 bucket，带重试
+		var createErr error
+		for i := 0; i < 3; i++ {
+			createErr = client.MakeBucket(ctx, cfg.Bucket, minio.MakeBucketOptions{
+				Region: "", // MinIO 不需要 region
+			})
+			if createErr == nil {
+				break
+			}
+			// 如果 bucket 已存在（可能在其他地方创建了），忽略错误
+			if strings.Contains(createErr.Error(), "BucketAlreadyExists") || 
+			   strings.Contains(createErr.Error(), "BucketAlreadyOwnedByYou") {
+				createErr = nil
+				break
+			}
+			if i < 2 {
+				time.Sleep(time.Second * time.Duration(i+1))
+			}
+		}
+		if createErr != nil {
+			return nil, fmt.Errorf("failed to create bucket %s after retries: %w", cfg.Bucket, createErr)
 		}
 	}
 

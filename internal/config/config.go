@@ -298,6 +298,9 @@ func LoadConfig() error {
 	}
 	if minioBucket := os.Getenv("MINIO_BUCKET"); minioBucket != "" {
 		viper.Set("knowledge.storage.bucket", minioBucket)
+	} else {
+		// 设置默认 bucket
+		viper.SetDefault("knowledge.storage.bucket", "knowledge")
 	}
 	if jwtSecret := os.Getenv("JWT_SECRET"); jwtSecret != "" {
 		viper.Set("jwt.secret", jwtSecret)

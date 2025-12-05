@@ -495,12 +495,29 @@ func (s *KnowledgeService) UploadFile(kbID, userID uint, file io.Reader, header 
 		return nil, fmt.Errorf("创建文档记录失败: %w", err)
 	}
 
-	// 上传文件到MinIO
-	minioService, err := middleware.NewMinIOService()
+	// 上传文件到MinIO（带重试）
+	var minioService *middleware.MinIOService
+	var err error
+	for i := 0; i < 3; i++ {
+		minioService, err = middleware.NewMinIOService()
+		if err == nil {
+			break
+		}
+		// 如果是连接错误，重试
+		if i < 2 && (strings.Contains(err.Error(), "502") || 
+			strings.Contains(err.Error(), "connection") ||
+			strings.Contains(err.Error(), "timeout") ||
+			strings.Contains(err.Error(), "Bad Gateway")) {
+			time.Sleep(time.Second * time.Duration(i+1))
+			continue
+		}
+		break
+	}
+	
 	if err != nil {
-		// MinIO未配置，更新状态为失败
+		// MinIO未配置或连接失败，更新状态为失败
 		doc.Status = "failed"
-		doc.Metadata = fmt.Sprintf(`{"error":"MinIO未配置: %v"}`, err)
+		doc.Metadata = fmt.Sprintf(`{"error":"MinIO服务未配置或连接失败: %v"}`, err)
 		database.DB.Save(doc)
 		return nil, fmt.Errorf("MinIO服务未配置: %w", err)
 	}
