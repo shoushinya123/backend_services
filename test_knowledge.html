@@ -613,9 +613,13 @@
         }
 
         function selectKnowledgeBase(kbId) {
-            document.getElementById('searchKbId').value = kbId;
+            // 如果未启用全库搜索，则设置知识库ID
+            if (!document.getElementById('searchAll').checked) {
+                document.getElementById('searchKbId').value = kbId;
+            }
             document.getElementById('uploadKbId').value = kbId;
             document.getElementById('processKbId').value = kbId;
+            document.getElementById('docListKbId').value = kbId;
         }
 
         async function createKnowledgeBase() {
