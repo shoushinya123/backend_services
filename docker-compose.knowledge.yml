@@ -15,8 +15,8 @@ services:
       ELASTICSEARCH_URL: http://host.docker.internal:9200
       MILVUS_ADDRESS: host.docker.internal:19530
       MINIO_ENDPOINT: host.docker.internal:9000
-      MINIO_ACCESS_KEY: minioadmin
-      MINIO_SECRET_KEY: minioadmin
+      MINIO_ACCESS_KEY: M2PVBvdMCJk0kpg2TURT
+      MINIO_SECRET_KEY: NCSxgvj8LEMMRuFr3x2EMcJdGwmSXY2vjZ4FpP2R
       KAFKA_BROKERS: host.docker.internal:19092
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY}
       DASHSCOPE_RERANK_MODEL: gte-rerank
