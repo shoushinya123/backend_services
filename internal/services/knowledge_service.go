@@ -775,6 +775,7 @@ func (s *KnowledgeService) SearchAllKnowledgeBases(userID uint, query string, to
 	
 	// 如果没有可访问的知识库，返回空结果
 	if len(bases) == 0 {
+		log.Printf("[search] 用户 %d 没有可访问的知识库", userID)
 		return []map[string]interface{}{}, nil
 	}
 
@@ -785,21 +786,30 @@ func (s *KnowledgeService) SearchAllKnowledgeBases(userID uint, query string, to
 			log.Printf("[search] 搜索知识库 %d 失败: %v", kb.KnowledgeBaseID, err)
 			continue
 		}
-		for _, r := range results {
-			r["knowledge_base_id"] = kb.KnowledgeBaseID
-			r["knowledge_base_name"] = kb.Name
-			allResults = append(allResults, r)
+		if len(results) > 0 {
+			for _, r := range results {
+				r["knowledge_base_id"] = kb.KnowledgeBaseID
+				r["knowledge_base_name"] = kb.Name
+				allResults = append(allResults, r)
+			}
 		}
 	}
 
 	// 按分数排序，最多返回 50 条
-	sort.Slice(allResults, func(i, j int) bool {
-		si, _ := allResults[i]["score"].(float64)
-		sj, _ := allResults[j]["score"].(float64)
-		return si > sj
-	})
-	if len(allResults) > 50 {
-		allResults = allResults[:50]
+	if len(allResults) > 0 {
+		sort.Slice(allResults, func(i, j int) bool {
+			si, _ := allResults[i]["score"].(float64)
+			sj, _ := allResults[j]["score"].(float64)
+			return si > sj
+		})
+		if len(allResults) > 50 {
+			allResults = allResults[:50]
+		}
+	}
+
+	// 确保返回空数组而不是 nil
+	if allResults == nil {
+		allResults = []map[string]interface{}{}
 	}
 
 	return allResults, nil
