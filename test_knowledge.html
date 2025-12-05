@@ -436,8 +436,14 @@
             <div class="section">
                 <h2>🔍 搜索知识库</h2>
                 <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="searchAll" onchange="toggleSearchMode()" style="margin-right: 8px;">
+                        全库搜索（搜索所有知识库）
+                    </label>
+                </div>
+                <div class="form-group" id="searchKbIdGroup">
                     <label for="searchKbId">知识库 ID:</label>
-                    <input type="number" id="searchKbId" placeholder="输入知识库 ID">
+                    <input type="number" id="searchKbId" placeholder="输入知识库 ID（留空则搜索所有）">
                 </div>
                 <div class="form-group">
                     <label for="searchQuery">搜索内容:</label>
@@ -646,22 +652,85 @@
             }
         }
 
+        function toggleSearchMode() {
+            const searchAll = document.getElementById('searchAll').checked;
+            const kbIdGroup = document.getElementById('searchKbIdGroup');
+            const kbIdInput = document.getElementById('searchKbId');
+            
+            if (searchAll) {
+                kbIdGroup.style.display = 'none';
+                kbIdInput.value = '';
+            } else {
+                kbIdGroup.style.display = 'block';
+            }
+        }
+
         async function searchKnowledge() {
             try {
+                const searchAll = document.getElementById('searchAll').checked;
                 const kbId = document.getElementById('searchKbId').value;
                 const query = document.getElementById('searchQuery').value;
                 const type = document.getElementById('searchType').value;
 
-                if (!kbId || !query) {
-                    alert('请输入知识库 ID 和搜索内容');
+                if (!query) {
+                    alert('请输入搜索内容');
                     return;
                 }
 
+                // 全库搜索：kbId设为0，添加all=true参数
+                // 单库搜索：使用指定的kbId
+                const finalKbId = searchAll ? '0' : (kbId || '0');
+                const allParam = searchAll ? '&all=true' : '';
+                
                 const result = document.getElementById('searchResult');
                 result.innerHTML = '<div class="loading"></div>';
 
-                const data = await apiCall(`/api/knowledge/${kbId}/search?query=${encodeURIComponent(query)}&type=${type}`);
-                showResult('searchResult', data, 'success');
+                const data = await apiCall(`/api/knowledge/${finalKbId}/search?query=${encodeURIComponent(query)}&type=${type}${allParam}`);
+                
+                // 美化显示搜索结果
+                if (data.success && data.data && data.data.results) {
+                    const results = data.data.results;
+                    let html = `<div style="margin-top: 15px;">
+                        <h3 style="color: #667eea; margin-bottom: 10px;">
+                            ${searchAll ? '🌐 全库搜索结果' : '📚 知识库搜索结果'} 
+                            <span style="font-size: 14px; color: #6c757d;">(找到 ${results.length} 条结果)</span>
+                        </h3>`;
+                    
+                    if (results.length === 0) {
+                        html += '<p style="text-align: center; color: #6c757d; padding: 20px;">未找到相关结果</p>';
+                    } else {
+                        results.forEach((item, index) => {
+                            const score = (item.score || 0).toFixed(3);
+                            const content = item.content || '';
+                            const metadata = item.metadata || {};
+                            const kbName = metadata.knowledge_base_name || `知识库 #${metadata.knowledge_base_id || '未知'}`;
+                            const docTitle = metadata.document_title || '未知文档';
+                            
+                            html += `
+                                <div style="background: white; padding: 15px; margin-bottom: 10px; border-radius: 8px; border-left: 4px solid #667eea;">
+                                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                                        <div>
+                                            <strong style="color: #495057;">${docTitle}</strong>
+                                            <span style="font-size: 12px; color: #6c757d; margin-left: 10px;">${kbName}</span>
+                                        </div>
+                                        <span style="font-size: 12px; color: #667eea; font-weight: 600;">相似度: ${score}</span>
+                                    </div>
+                                    <div style="color: #495057; line-height: 1.6; font-size: 14px;">
+                                        ${item.match_context || content.substring(0, 200)}${content.length > 200 ? '...' : ''}
+                                    </div>
+                                    <div style="margin-top: 8px; font-size: 11px; color: #6c757d;">
+                                        块ID: ${item.chunk_id} | 文档ID: ${item.document_id}
+                                    </div>
+                                </div>
+                            `;
+                        });
+                    }
+                    
+                    html += '</div>';
+                    result.innerHTML = html;
+                } else {
+                    showResult('searchResult', data, 'success');
+                }
             } catch (error) {
                 showError('searchResult', error);
             }
