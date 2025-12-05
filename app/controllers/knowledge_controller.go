@@ -280,8 +280,8 @@ func (c *KnowledgeController) Search() {
 	query := c.GetString("query")
 	topK, _ := strconv.Atoi(c.GetString("topK", "5"))
 
-	// 如果 all=true，则在用户可访问的所有知识库中搜索
-	searchAll := c.GetString("all") == "true" || c.GetString("all") == "1"
+	// 如果 all=true 或 kbID=0，则在用户可访问的所有知识库中搜索
+	searchAll := c.GetString("all") == "true" || c.GetString("all") == "1" || kbID == 0
 	if searchAll {
 		results, err := c.knowledgeService.SearchAllKnowledgeBases(userID, query, topK)
 		if err != nil {
@@ -297,6 +297,10 @@ func (c *KnowledgeController) Search() {
 	}
 
 	// 默认：指定知识库搜索
+	if kbID == 0 {
+		c.JSONError(http.StatusBadRequest, "知识库ID不能为0，请使用 all=true 进行全库搜索")
+		return
+	}
 	results, err := c.knowledgeService.SearchKnowledgeBase(uint(kbID), userID, query, topK)
 	if err != nil {
 		c.JSONError(http.StatusBadRequest, err.Error())

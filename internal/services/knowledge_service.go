@@ -770,7 +770,12 @@ func (s *KnowledgeService) SearchAllKnowledgeBases(userID uint, query string, to
 	// 获取用户可访问的知识库（限制 200 个以避免过大）
 	bases, _, err := s.GetKnowledgeBases(userID, 1, 200, "")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("获取知识库列表失败: %w", err)
+	}
+	
+	// 如果没有可访问的知识库，返回空结果
+	if len(bases) == 0 {
+		return []map[string]interface{}{}, nil
 	}
 
 	var allResults []map[string]interface{}
