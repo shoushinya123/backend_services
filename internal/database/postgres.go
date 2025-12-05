@@ -62,22 +62,74 @@ func autoMigrate(db *gorm.DB) error {
 		log.Printf("⚠️  Failed to create users table (may already exist): %v", err)
 	}
 	
+	// 使用 AutoMigrate 创建表，GORM 会自动处理外键约束
 	// 1. 先创建主表
 	if err := db.AutoMigrate(&models.KnowledgeBase{}); err != nil {
-		return fmt.Errorf("failed to migrate knowledge_bases: %w", err)
+		log.Printf("⚠️  Failed to migrate knowledge_bases: %v", err)
+		// 继续执行，可能表已存在
 	}
-	// 2. 创建文档表
+	
+	// 2. 创建文档表（临时禁用外键检查）
+	db.Exec("SET CONSTRAINTS ALL DEFERRED")
 	if err := db.AutoMigrate(&models.KnowledgeDocument{}); err != nil {
-		return fmt.Errorf("failed to migrate knowledge_documents: %w", err)
+		log.Printf("⚠️  Failed to migrate knowledge_documents: %v", err)
+		// 如果 AutoMigrate 失败，尝试手动创建
+		db.Exec(`
+			CREATE TABLE IF NOT EXISTS knowledge_documents (
+				document_id bigserial PRIMARY KEY,
+				knowledge_base_id bigint NOT NULL,
+				title varchar(200) NOT NULL,
+				content text NOT NULL,
+				source varchar(20) NOT NULL,
+				source_url varchar(500),
+				file_path varchar(500),
+				metadata json,
+				status varchar(20) DEFAULT 'processing',
+				vector_id varchar(255),
+				create_time timestamptz DEFAULT NOW(),
+				update_time timestamptz,
+				CONSTRAINT fk_knowledge_bases_documents FOREIGN KEY (knowledge_base_id) REFERENCES knowledge_bases(knowledge_base_id)
+			)
+		`)
 	}
+	
 	// 3. 创建块表
 	if err := db.AutoMigrate(&models.KnowledgeChunk{}); err != nil {
-		return fmt.Errorf("failed to migrate knowledge_chunks: %w", err)
+		log.Printf("⚠️  Failed to migrate knowledge_chunks: %v", err)
+		// 如果 AutoMigrate 失败，尝试手动创建
+		db.Exec(`
+			CREATE TABLE IF NOT EXISTS knowledge_chunks (
+				chunk_id bigserial PRIMARY KEY,
+				document_id bigint NOT NULL,
+				content text NOT NULL,
+				chunk_index integer NOT NULL,
+				vector_id varchar(255) NOT NULL,
+				embedding json,
+				metadata json,
+				create_time timestamptz DEFAULT NOW(),
+				CONSTRAINT fk_knowledge_documents_chunks FOREIGN KEY (document_id) REFERENCES knowledge_documents(document_id)
+			)
+		`)
 	}
-	// 4. 最后创建搜索表（依赖knowledge_bases）
+	
+	// 4. 最后创建搜索表（依赖knowledge_bases和users）
 	if err := db.AutoMigrate(&models.KnowledgeSearch{}); err != nil {
-		return fmt.Errorf("failed to migrate knowledge_searches: %w", err)
+		log.Printf("⚠️  Failed to migrate knowledge_searches: %v", err)
+		// 如果 AutoMigrate 失败，尝试手动创建
+		db.Exec(`
+			CREATE TABLE IF NOT EXISTS knowledge_searches (
+				search_id bigserial PRIMARY KEY,
+				knowledge_base_id bigint NOT NULL,
+				user_id bigint NOT NULL,
+				query text NOT NULL,
+				results json,
+				create_time timestamptz DEFAULT NOW(),
+				CONSTRAINT fk_knowledge_bases_searches FOREIGN KEY (knowledge_base_id) REFERENCES knowledge_bases(knowledge_base_id),
+				CONSTRAINT fk_users_searches FOREIGN KEY (user_id) REFERENCES users(user_id)
+			)
+		`)
 	}
+	
 	return nil
 }
 
