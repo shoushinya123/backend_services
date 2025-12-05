@@ -434,7 +434,7 @@
 
             <!-- 搜索 -->
             <div class="section">
-                <h2>🔍 搜索知识库</h2>
+                <h2>🔍 搜索知识库（智能自适应检索）</h2>
                 <div class="form-group">
                     <label>
                         <input type="checkbox" id="searchAll" onchange="toggleSearchMode()" style="margin-right: 8px;">
@@ -450,12 +450,22 @@
                     <input type="text" id="searchQuery" placeholder="输入搜索关键词">
                 </div>
                 <div class="form-group">
-                    <label for="searchType">搜索类型:</label>
-                    <select id="searchType">
-                        <option value="hybrid">混合搜索 (Hybrid)</option>
-                        <option value="vector">向量搜索 (Vector)</option>
-                        <option value="fulltext">全文搜索 (Fulltext)</option>
+                    <label for="searchMode">检索模式:</label>
+                    <select id="searchMode">
+                        <option value="auto" selected>自动适配 (Auto) - 根据查询特征自动选择最优策略</option>
+                        <option value="fulltext">仅全文检索 (Fulltext) - 精确匹配优先</option>
+                        <option value="vector">仅向量检索 (Vector) - 语义相似度</option>
+                        <option value="hybrid">强制混合检索 (Hybrid) - 全文+向量融合</option>
                     </select>
+                </div>
+                <div class="form-group">
+                    <label for="topK">返回结果数量 (TopK):</label>
+                    <input type="number" id="topK" value="10" min="1" max="50" placeholder="默认10">
+                </div>
+                <div class="form-group">
+                    <label for="vectorThreshold">向量相似度阈值:</label>
+                    <input type="number" id="vectorThreshold" value="0.9" min="0.5" max="1.0" step="0.01" placeholder="默认0.9 (仅筛选0.9-1范围)">
+                    <small style="color: #6c757d; display: block; margin-top: 5px;">仅返回相似度 >= 阈值的结果（0.9-1范围）</small>
                 </div>
                 <button class="btn" onclick="searchKnowledge()">搜索</button>
                 <div id="searchResult"></div>
@@ -674,7 +684,9 @@
                 const searchAll = document.getElementById('searchAll').checked;
                 const kbId = document.getElementById('searchKbId').value;
                 const query = document.getElementById('searchQuery').value;
-                const type = document.getElementById('searchType').value;
+                const mode = document.getElementById('searchMode').value;
+                const topK = document.getElementById('topK').value || '10';
+                const vectorThreshold = document.getElementById('vectorThreshold').value || '0.9';
 
                 if (!query) {
                     alert('请输入搜索内容');
@@ -689,41 +701,82 @@
                 const result = document.getElementById('searchResult');
                 result.innerHTML = '<div class="loading"></div>';
 
-                const data = await apiCall(`/api/knowledge/${finalKbId}/search?query=${encodeURIComponent(query)}&type=${type}${allParam}`);
+                // 构建新的API调用URL，使用mode参数替代type
+                const url = `/api/knowledge/${finalKbId}/search?query=${encodeURIComponent(query)}&mode=${mode}&topK=${topK}&vector_threshold=${vectorThreshold}${allParam}`;
+                const data = await apiCall(url);
                 
                 // 美化显示搜索结果
                 if (data.success && data.data) {
                     const results = Array.isArray(data.data.results) ? data.data.results : [];
+                    const actualMode = data.data.mode || mode;
+                    const modeLabels = {
+                        'auto': '🤖 自动适配',
+                        'fulltext': '📄 全文检索',
+                        'vector': '🔢 向量检索',
+                        'hybrid': '🔀 混合检索'
+                    };
+                    const modeLabel = modeLabels[actualMode] || actualMode;
+                    
                     let html = `<div style="margin-top: 15px;">
-                        <h3 style="color: #667eea; margin-bottom: 10px;">
-                            ${searchAll ? '🌐 全库搜索结果' : '📚 知识库搜索结果'} 
-                            <span style="font-size: 14px; color: #6c757d;">(找到 ${results.length} 条结果)</span>
-                        </h3>`;
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding: 10px; background: #f8f9fa; border-radius: 6px;">
+                            <h3 style="color: #667eea; margin: 0;">
+                                ${searchAll ? '🌐 全库搜索结果' : '📚 知识库搜索结果'} 
+                                <span style="font-size: 14px; color: #6c757d;">(找到 ${results.length} 条结果)</span>
+                            </h3>
+                            <div style="font-size: 12px; color: #6c757d;">
+                                <span style="background: #667eea; color: white; padding: 4px 8px; border-radius: 4px; margin-right: 8px;">
+                                    ${modeLabel}
+                                </span>
+                                <span>阈值: ${vectorThreshold}</span>
+                            </div>
+                        </div>`;
                     
                     if (results.length === 0) {
                         html += '<p style="text-align: center; color: #6c757d; padding: 20px;">未找到相关结果</p>';
                     } else {
                         results.forEach((item, index) => {
                             const score = (item.score || 0).toFixed(3);
+                            const similarity = item.similarity !== undefined ? (item.similarity || 0).toFixed(3) : score;
                             const content = item.content || '';
                             const metadata = item.metadata || {};
                             const kbName = metadata.knowledge_base_name || `知识库 #${metadata.knowledge_base_id || '未知'}`;
                             const docTitle = metadata.document_title || '未知文档';
+                            const retrievalType = item.retrieval_type || actualMode;
+                            
+                            // 根据检索类型显示不同的颜色
+                            const typeColors = {
+                                'fulltext': '#28a745',
+                                'vector': '#17a2b8',
+                                'hybrid': '#ffc107',
+                                'auto': '#667eea'
+                            };
+                            const typeColor = typeColors[retrievalType] || '#667eea';
                             
                             html += `
-                                <div style="background: white; padding: 15px; margin-bottom: 10px; border-radius: 8px; border-left: 4px solid #667eea;">
-                                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                                        <div>
-                                            <strong style="color: #495057;">${docTitle}</strong>
-                                            <span style="font-size: 12px; color: #6c757d; margin-left: 10px;">${kbName}</span>
+                                <div style="background: white; padding: 15px; margin-bottom: 10px; border-radius: 8px; border-left: 4px solid ${typeColor}; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px; align-items: flex-start;">
+                                        <div style="flex: 1;">
+                                            <strong style="color: #495057; font-size: 16px;">${docTitle}</strong>
+                                            <div style="margin-top: 4px;">
+                                                <span style="font-size: 12px; color: #6c757d; margin-right: 10px;">📚 ${kbName}</span>
+                                                <span style="font-size: 11px; background: ${typeColor}; color: white; padding: 2px 6px; border-radius: 3px;">
+                                                    ${retrievalType.toUpperCase()}
+                                                </span>
+                                            </div>
                                         </div>
-                                        <span style="font-size: 12px; color: #667eea; font-weight: 600;">相似度: ${score}</span>
+                                        <div style="text-align: right;">
+                                            <div style="font-size: 14px; color: ${typeColor}; font-weight: 600;">
+                                                得分: ${score}
+                                            </div>
+                                            ${item.similarity !== undefined ? `<div style="font-size: 12px; color: #6c757d; margin-top: 2px;">相似度: ${similarity}</div>` : ''}
+                                        </div>
                                     </div>
-                                    <div style="color: #495057; line-height: 1.6; font-size: 14px;">
-                                        ${item.match_context || content.substring(0, 200)}${content.length > 200 ? '...' : ''}
+                                    <div style="color: #495057; line-height: 1.6; font-size: 14px; margin: 10px 0; padding: 10px; background: #f8f9fa; border-radius: 4px;">
+                                        ${item.match_context || content.substring(0, 300)}${content.length > 300 ? '...' : ''}
                                     </div>
-                                    <div style="margin-top: 8px; font-size: 11px; color: #6c757d;">
-                                        块ID: ${item.chunk_id} | 文档ID: ${item.document_id}
+                                    <div style="margin-top: 8px; font-size: 11px; color: #6c757d; display: flex; justify-content: space-between;">
+                                        <span>块ID: ${item.chunk_id} | 文档ID: ${item.document_id}</span>
+                                        <span>排名: #${index + 1}</span>
                                     </div>
                                 </div>
                             `;
