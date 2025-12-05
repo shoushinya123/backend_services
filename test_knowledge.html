@@ -546,12 +546,21 @@
                 const url = `${API_BASE()}/api/knowledge/${kbId}/upload`;
                 const response = await fetch(url, {
                     method: 'POST',
-                    body: formData
+                    body: formData,
+                    headers: {
+                        'X-User-ID': '1' // 添加用户ID头
+                    }
                 });
 
-                const data = await response.json();
+                let data;
+                try {
+                    data = await response.json();
+                } catch (e) {
+                    throw new Error(`服务器响应格式错误: ${response.status} ${response.statusText}`);
+                }
+                
                 if (!response.ok) {
-                    throw new Error(data.error || `HTTP ${response.status}`);
+                    throw new Error(data.error || data.message || `HTTP ${response.status}: ${response.statusText}`);
                 }
 
                 showResult('uploadResult', data, 'success');

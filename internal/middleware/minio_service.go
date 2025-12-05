@@ -63,34 +63,36 @@ func NewMinIOService() (*MinIOService, error) {
 		config: cfg,
 	}
 
-	// 确保bucket存在（带重试逻辑，最多等待30秒）
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	// 确保bucket存在（带重试逻辑，最多等待60秒）
+	// 使用更长的超时时间，因为MinIO服务可能需要时间启动
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	// 重试5次，每次等待更长时间（给MinIO服务启动时间）
+	// 重试10次，每次等待更长时间（给MinIO服务启动时间）
 	var exists bool
 	var bucketErr error
-	for i := 0; i < 5; i++ {
+	for i := 0; i < 10; i++ {
 		exists, bucketErr = client.BucketExists(ctx, cfg.Bucket)
 		if bucketErr == nil {
 			break
 		}
 		// 如果是连接错误，等待更长时间后重试
-		if i < 4 {
-			waitTime := time.Second * time.Duration((i+1)*2) // 2s, 4s, 6s, 8s
+		if i < 9 {
+			waitTime := time.Second * time.Duration((i+1)*2) // 2s, 4s, 6s, 8s, 10s...
+			log.Printf("⚠️  MinIO connection attempt %d/%d failed, retrying in %v: %v", i+1, 10, waitTime, bucketErr)
 			time.Sleep(waitTime)
 		}
 	}
 
 	if bucketErr != nil {
 		// 如果检查失败，尝试直接创建（可能MinIO刚启动，bucket还不存在）
-		log.Printf("⚠️  Failed to check bucket existence, attempting to create: %v", bucketErr)
+		log.Printf("⚠️  Failed to check bucket existence after retries, attempting to create: %v", bucketErr)
 	}
 
 	if !exists {
 		// 创建 bucket，带重试
 		var createErr error
-		for i := 0; i < 5; i++ {
+		for i := 0; i < 10; i++ {
 			createErr = client.MakeBucket(ctx, cfg.Bucket, minio.MakeBucketOptions{
 				Region: "", // MinIO 不需要 region
 			})
@@ -106,8 +108,9 @@ func NewMinIOService() (*MinIOService, error) {
 				createErr = nil
 				break
 			}
-			if i < 4 {
+			if i < 9 {
 				waitTime := time.Second * time.Duration((i+1)*2)
+				log.Printf("⚠️  Bucket creation attempt %d/%d failed, retrying in %v: %v", i+1, 10, waitTime, createErr)
 				time.Sleep(waitTime)
 			}
 		}
