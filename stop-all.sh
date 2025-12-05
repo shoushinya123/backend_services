@@ -11,3 +11,4 @@ docker-compose -f docker-compose.infra.yml down
 
 echo "✅ 所有服务已停止"
 
+

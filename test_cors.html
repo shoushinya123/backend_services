@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>CORS 测试</title>
+</head>
+<body>
+    <h1>CORS 连接测试</h1>
+    <button onclick="testConnection()">测试连接</button>
+    <pre id="result"></pre>
+    <script>
+        async function testConnection() {
+            const result = document.getElementById('result');
+            result.textContent = '测试中...';
+            
+            try {
+                const response = await fetch('http://localhost:80/health', {
+                    method: 'GET',
+                    mode: 'cors',
+                    credentials: 'include',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                result.textContent = '✅ 连接成功！\n\n' + JSON.stringify(data, null, 2);
+            } catch (error) {
+                result.textContent = '❌ 连接失败！\n\n错误信息：' + error.message + '\n\n请检查：\n1. Envoy 是否运行：docker ps | grep envoy\n2. 端口 80 是否可访问：curl http://localhost:80/health\n3. 浏览器控制台是否有更多错误信息';
+            }
+        }
+    </script>
+</body>
+</html>

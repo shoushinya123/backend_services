@@ -194,6 +194,134 @@
             margin-top: 15px;
         }
 
+        .document-card {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #e9ecef;
+            margin-bottom: 15px;
+            transition: box-shadow 0.3s;
+        }
+
+        .document-card:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        .document-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .document-title {
+            font-weight: 600;
+            font-size: 16px;
+            color: #495057;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .status-processing {
+            background: #fff3cd;
+            color: #856404;
+            animation: pulse 2s infinite;
+        }
+
+        .status-completed {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-failed {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .status-uploading {
+            background: #cfe2ff;
+            color: #084298;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        .document-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            margin: 10px 0;
+        }
+
+        .stat-item {
+            background: #f8f9fa;
+            padding: 8px;
+            border-radius: 4px;
+            text-align: center;
+        }
+
+        .stat-label {
+            font-size: 11px;
+            color: #6c757d;
+            margin-bottom: 4px;
+        }
+
+        .stat-value {
+            font-size: 18px;
+            font-weight: 600;
+            color: #495057;
+        }
+
+        .service-status {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .service-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            gap: 4px;
+        }
+
+        .service-ready {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .service-not-ready {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #e9ecef;
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            transition: width 0.3s;
+        }
+
         .knowledge-card {
             background: white;
             padding: 15px;
@@ -271,7 +399,7 @@
 
         <div class="config-section">
             <label for="apiBaseUrl">API 基础地址:</label>
-            <input type="text" id="apiBaseUrl" value="http://localhost:8001" placeholder="http://localhost:8001">
+            <input type="text" id="apiBaseUrl" value="http://localhost:80" placeholder="http://localhost:80 (通过 Envoy Gateway)">
         </div>
 
         <div class="content">
@@ -352,11 +480,24 @@
                 <button class="btn" onclick="processDocuments()">处理所有文档</button>
                 <div id="processResult"></div>
             </div>
+
+            <!-- 文档列表和状态 -->
+            <div class="section">
+                <h2>📚 文档列表和状态</h2>
+                <div class="form-group">
+                    <label for="docListKbId">知识库 ID:</label>
+                    <input type="number" id="docListKbId" placeholder="输入知识库 ID">
+                </div>
+                <button class="btn" onclick="loadDocuments()">加载文档列表</button>
+                <button class="btn btn-secondary" onclick="startPolling()">开始自动刷新</button>
+                <button class="btn btn-secondary" onclick="stopPolling()">停止自动刷新</button>
+                <div id="documentsResult"></div>
+            </div>
         </div>
     </div>
 
     <script>
-        const API_BASE = () => document.getElementById('apiBaseUrl').value || 'http://localhost:8001';
+        const API_BASE = () => document.getElementById('apiBaseUrl').value || 'http://localhost:80';
 
         function showResult(elementId, data, type = 'info') {
             const element = document.getElementById(elementId);
@@ -385,7 +526,7 @@
                         ...options.headers
                     },
                     mode: 'cors', // 明确指定 CORS 模式
-                    credentials: 'omit' // 不发送 cookies
+                    credentials: 'include' // 包含 credentials 以匹配 Envoy 配置
                 });
 
                 // 检查响应内容类型
@@ -408,6 +549,11 @@
                 }
                 return data;
             } catch (error) {
+                // 处理网络错误
+                if (error.name === 'TypeError' && error.message.includes('fetch')) {
+                    const apiUrl = API_BASE();
+                    throw new Error(`网络连接失败: 无法连接到 ${apiUrl}\n\n可能的原因：\n1. Envoy Gateway 未运行（端口 80）\n2. 服务未启动\n3. 浏览器阻止了请求\n\n请检查：\n- 打开浏览器控制台（F12）查看详细错误\n- 确认服务运行：docker ps | grep envoy\n- 测试连接：curl ${apiUrl}/health`);
+                }
                 // 处理 CORS 错误
                 if (error.message.includes('CORS') || error.message.includes('fetch')) {
                     throw new Error('CORS 错误：请确保服务已启动且 CORS 配置正确。如果使用 file:// 协议，建议使用 HTTP 服务器（如：python -m http.server 8080）');
@@ -587,8 +733,245 @@
                 });
 
                 showResult('processResult', data, 'success');
+                
+                // 处理成功后，自动刷新文档列表
+                if (document.getElementById('docListKbId').value === kbId) {
+                    setTimeout(() => loadDocuments(), 1000);
+                }
             } catch (error) {
                 showError('processResult', error);
+            }
+        }
+
+        let pollingInterval = null;
+
+        async function loadDocuments() {
+            try {
+                const result = document.getElementById('documentsResult');
+                result.innerHTML = '<div class="loading"></div>';
+                
+                const kbId = document.getElementById('docListKbId').value;
+                if (!kbId) {
+                    throw new Error('请输入知识库 ID');
+                }
+                
+                const data = await apiCall(`/api/knowledge/${kbId}/documents`);
+                
+                if (data.success && data.data && data.data.documents) {
+                    const documents = data.data.documents;
+                    let html = '<div class="documents-list">';
+                    
+                    if (documents.length === 0) {
+                        html += '<p style="text-align: center; color: #6c757d; padding: 20px;">暂无文档</p>';
+                    } else {
+                        documents.forEach(doc => {
+                            const status = doc.status || 'unknown';
+                            const statusClass = `status-${status}`;
+                            const chunkCount = doc.chunk_count || 0;
+                            const vectorizedCount = doc.vectorized_count || 0;
+                            const progress = chunkCount > 0 ? (vectorizedCount / chunkCount * 100).toFixed(1) : 0;
+                            
+                            const services = doc.processing_info || {};
+                            const embedderReady = services.embedder_ready || false;
+                            const embedderName = services.embedder_name || '未配置';
+                            const vectorStoreReady = services.vector_store_ready || false;
+                            const indexerReady = services.indexer_ready || false;
+                            const rerankerReady = services.reranker_ready || false;
+                            
+                            const createTime = new Date(doc.create_time).toLocaleString('zh-CN');
+                            const updateTime = new Date(doc.update_time).toLocaleString('zh-CN');
+                            
+                            html += `
+                                <div class="document-card">
+                                    <div class="document-header">
+                                        <div class="document-title">${doc.title || '未命名文档'}</div>
+                                        <span class="status-badge ${statusClass}">${getStatusText(status)}</span>
+                                    </div>
+                                    
+                                    <div class="document-stats">
+                                        <div class="stat-item">
+                                            <div class="stat-label">文档ID</div>
+                                            <div class="stat-value">#${doc.document_id}</div>
+                                        </div>
+                                        <div class="stat-item">
+                                            <div class="stat-label">分块数量</div>
+                                            <div class="stat-value">${chunkCount}</div>
+                                        </div>
+                                        <div class="stat-item">
+                                            <div class="stat-label">已向量化</div>
+                                            <div class="stat-value">${vectorizedCount}</div>
+                                        </div>
+                                        <div class="stat-item">
+                                            <div class="stat-label">处理进度</div>
+                                            <div class="stat-value">${progress}%</div>
+                                        </div>
+                                    </div>
+                                    
+                                    ${chunkCount > 0 ? `
+                                    <div class="progress-bar">
+                                        <div class="progress-fill" style="width: ${progress}%"></div>
+                                    </div>
+                                    ` : ''}
+                                    
+                                    <div class="service-status">
+                                        <span class="service-badge ${embedderReady ? 'service-ready' : 'service-not-ready'}">
+                                            ${embedderReady ? '✓' : '✗'} Embedding: ${embedderName}
+                                        </span>
+                                        <span class="service-badge ${vectorStoreReady ? 'service-ready' : 'service-not-ready'}">
+                                            ${vectorStoreReady ? '✓' : '✗'} Vector Store
+                                        </span>
+                                        <span class="service-badge ${indexerReady ? 'service-ready' : 'service-not-ready'}">
+                                            ${indexerReady ? '✓' : '✗'} Indexer
+                                        </span>
+                                        <span class="service-badge ${rerankerReady ? 'service-ready' : 'service-not-ready'}">
+                                            ${rerankerReady ? '✓' : '✗'} Reranker
+                                        </span>
+                                    </div>
+                                    
+                                    <div style="margin-top: 10px; font-size: 12px; color: #6c757d;">
+                                        <div>来源: ${doc.source || 'unknown'}</div>
+                                        <div>创建时间: ${createTime}</div>
+                                        <div>更新时间: ${updateTime}</div>
+                                        ${doc.file_path ? `<div>文件路径: ${doc.file_path}</div>` : ''}
+                                    </div>
+                                    
+                                    <button class="btn btn-secondary" style="margin-top: 10px; font-size: 12px; padding: 6px 12px;" 
+                                            onclick="viewDocumentDetail(${doc.knowledge_base_id}, ${doc.document_id})">
+                                        查看详情
+                                    </button>
+                                </div>
+                            `;
+                        });
+                    }
+                    
+                    html += '</div>';
+                    result.innerHTML = html;
+                } else {
+                    showResult('documentsResult', data, 'info');
+                }
+            } catch (error) {
+                showError('documentsResult', error);
+            }
+        }
+
+        function getStatusText(status) {
+            const statusMap = {
+                'processing': '处理中',
+                'completed': '已完成',
+                'failed': '失败',
+                'uploading': '上传中'
+            };
+            return statusMap[status] || status;
+        }
+
+        function startPolling() {
+            const kbId = document.getElementById('docListKbId').value;
+            if (!kbId) {
+                alert('请先输入知识库 ID');
+                return;
+            }
+            
+            if (pollingInterval) {
+                clearInterval(pollingInterval);
+            }
+            
+            loadDocuments(); // 立即加载一次
+            pollingInterval = setInterval(() => {
+                loadDocuments();
+            }, 3000); // 每3秒刷新一次
+            
+            alert('已开始自动刷新（每3秒）');
+        }
+
+        function stopPolling() {
+            if (pollingInterval) {
+                clearInterval(pollingInterval);
+                pollingInterval = null;
+                alert('已停止自动刷新');
+            }
+        }
+
+        async function viewDocumentDetail(kbId, docId) {
+            try {
+                const data = await apiCall(`/api/knowledge/${kbId}/documents/${docId}`);
+                
+                if (data.success && data.data) {
+                    const doc = data.data;
+                    const stats = doc.statistics || {};
+                    const services = doc.services || {};
+                    
+                    let detailHtml = `
+                        <div style="background: white; padding: 20px; border-radius: 8px; margin-top: 15px; border: 2px solid #667eea;">
+                            <h3>📄 文档详情: ${doc.title}</h3>
+                            <div class="document-stats">
+                                <div class="stat-item">
+                                    <div class="stat-label">总块数</div>
+                                    <div class="stat-value">${stats.total_chunks || 0}</div>
+                                </div>
+                                <div class="stat-item">
+                                    <div class="stat-label">已向量化</div>
+                                    <div class="stat-value">${stats.vectorized_chunks || 0}</div>
+                                </div>
+                                <div class="stat-item">
+                                    <div class="stat-label">已索引</div>
+                                    <div class="stat-value">${stats.indexed_chunks || 0}</div>
+                                </div>
+                                <div class="stat-item">
+                                    <div class="stat-label">进度</div>
+                                    <div class="stat-value">${(stats.progress_percent || 0).toFixed(1)}%</div>
+                                </div>
+                            </div>
+                            
+                            <div class="progress-bar" style="margin: 15px 0;">
+                                <div class="progress-fill" style="width: ${stats.progress_percent || 0}%"></div>
+                            </div>
+                            
+                            <div class="service-status" style="margin: 15px 0;">
+                                <span class="service-badge ${services.embedder?.ready ? 'service-ready' : 'service-not-ready'}">
+                                    ${services.embedder?.ready ? '✓' : '✗'} Embedding: ${services.embedder?.name || '未配置'}
+                                </span>
+                                <span class="service-badge ${services.vector_store?.ready ? 'service-ready' : 'service-not-ready'}">
+                                    ${services.vector_store?.ready ? '✓' : '✗'} Vector Store
+                                </span>
+                                <span class="service-badge ${services.indexer?.ready ? 'service-ready' : 'service-not-ready'}">
+                                    ${services.indexer?.ready ? '✓' : '✗'} Indexer
+                                </span>
+                                <span class="service-badge ${services.reranker?.ready ? 'service-ready' : 'service-not-ready'}">
+                                    ${services.reranker?.ready ? '✓' : '✗'} Reranker
+                                </span>
+                            </div>
+                            
+                            <div style="margin-top: 15px;">
+                                <strong>状态:</strong> <span class="status-badge status-${doc.status}">${getStatusText(doc.status)}</span>
+                            </div>
+                            
+                            ${doc.processing_status ? `
+                            <div style="margin-top: 15px; padding: 10px; background: #f8f9fa; border-radius: 4px;">
+                                <strong>处理状态:</strong>
+                                <pre style="margin-top: 5px; font-size: 12px;">${JSON.stringify(doc.processing_status, null, 2)}</pre>
+                            </div>
+                            ` : ''}
+                            
+                            ${doc.chunks && doc.chunks.length > 0 ? `
+                            <div style="margin-top: 15px;">
+                                <strong>块列表 (${doc.chunks.length}):</strong>
+                                <div style="max-height: 300px; overflow-y: auto; margin-top: 10px;">
+                                    ${doc.chunks.map((chunk, idx) => `
+                                        <div style="padding: 8px; margin-bottom: 5px; background: #f8f9fa; border-radius: 4px; font-size: 12px;">
+                                            <div>块 #${chunk.chunk_index} ${chunk.has_vector ? '✓ 已向量化' : '✗ 未向量化'}</div>
+                                            <div style="color: #6c757d; margin-top: 4px;">${chunk.content_preview}</div>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+                            ` : ''}
+                        </div>
+                    `;
+                    
+                    document.getElementById('documentsResult').innerHTML += detailHtml;
+                }
+            } catch (error) {
+                alert('获取文档详情失败: ' + error.message);
             }
         }
 

@@ -7,3 +7,4 @@ docker-compose -f docker-compose.infra.yml down
 
 echo "✅ 基础设施服务已停止"
 
+

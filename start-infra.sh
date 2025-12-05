@@ -31,3 +31,4 @@ echo "  - MinIO: http://localhost:9000 (Console: http://localhost:9001)"
 echo "  - Kafka: localhost:19092"
 echo "  - Zookeeper: localhost:2181"
 
+

@@ -16,11 +16,3 @@ func InitMinIO() (interface{}, error) {
 	}
 	return service, nil
 }
-
-
-
-
-
-
-
-

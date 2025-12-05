@@ -32,6 +32,11 @@ func NewHybridSearchEngine(indexer FulltextIndexer, vectorStore VectorStore, emb
 	}
 }
 
+// HasReranker 检查是否有可用的 Reranker
+func (e *HybridSearchEngine) HasReranker() bool {
+	return e.reranker != nil && e.reranker.Ready()
+}
+
 func (e *HybridSearchEngine) Search(ctx context.Context, req HybridSearchRequest) ([]SearchMatch, error) {
 	if strings.TrimSpace(req.Query) == "" {
 		return nil, errors.New("query cannot be empty")

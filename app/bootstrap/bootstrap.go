@@ -5,6 +5,7 @@ import (
 
 	"github.com/aihub/backend-go/internal/config"
 	"github.com/aihub/backend-go/internal/consul"
+	"github.com/aihub/backend-go/internal/etcd"
 	"github.com/aihub/backend-go/internal/database"
 	"github.com/aihub/backend-go/internal/kafka"
 	"github.com/aihub/backend-go/internal/logger"
@@ -18,7 +19,8 @@ import (
 type App struct {
 	cleanupTasks    []func() error
 	consulClient    *consul.Client
-	serviceRegistry *consul.ServiceRegistry
+	etcdClient      *etcd.Client
+	serviceRegistry interface{} // Can be consul.ServiceRegistry or etcd.ServiceRegistry
 }
 
 // GetConsulClient returns the Consul client instance
@@ -150,8 +152,38 @@ func Init() (*App, error) {
 		}
 	}
 
-	// Register service with Consul (if enabled)
-	if config.AppConfig.Consul.Enabled && app.consulClient != nil && app.consulClient.IsEnabled() {
+	// Register service with etcd (preferred) or Consul
+	if config.AppConfig.Etcd.Enabled {
+		// Use etcd for service registration
+		etcdClient, err := etcd.NewClient(
+			config.AppConfig.Etcd.Endpoints,
+			config.AppConfig.Etcd.Enabled,
+			logger.Logger,
+		)
+		if err != nil {
+			logger.Warn("Failed to initialize etcd client", zap.Error(err))
+		} else if etcdClient.IsEnabled() {
+			app.etcdClient = etcdClient
+			serviceRegistry := etcd.NewServiceRegistry(
+				etcdClient,
+				config.AppConfig.Etcd.ServiceID,
+				config.AppConfig.Etcd.ServiceName,
+				logger.Logger,
+			)
+			if err := serviceRegistry.Register(config.AppConfig); err != nil {
+				logger.Warn("Failed to register service with etcd", zap.Error(err))
+			} else {
+				app.serviceRegistry = serviceRegistry
+				app.cleanupTasks = append(app.cleanupTasks, func() error {
+					return serviceRegistry.Deregister()
+				})
+				app.cleanupTasks = append(app.cleanupTasks, func() error {
+					return etcdClient.Close()
+				})
+			}
+		}
+	} else if config.AppConfig.Consul.Enabled && app.consulClient != nil && app.consulClient.IsEnabled() {
+		// Fallback to Consul if etcd is not enabled
 		serviceRegistry := consul.NewServiceRegistry(
 			app.consulClient,
 			config.AppConfig.Consul.ServiceID,

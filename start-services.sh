@@ -38,3 +38,4 @@ echo "服务地址："
 echo "  - 知识库服务: http://localhost:8001"
 echo "  - 健康检查: http://localhost:8001/health"
 
+

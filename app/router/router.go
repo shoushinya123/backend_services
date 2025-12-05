@@ -4,7 +4,7 @@ import (
 	"os"
 
 	"github.com/aihub/backend-go/app/controllers"
-	"github.com/aihub/backend-go/app/middleware"
+	// "github.com/aihub/backend-go/app/middleware" // CORS 已移到 Envoy Gateway
 	"github.com/beego/beego/v2/server/web"
 )
 
@@ -13,8 +13,8 @@ func InitKnowledgeRoutes() {
 	web.Router("/", &controllers.RootController{}, "get:Index")
 	web.Router("/health", &controllers.HealthController{}, "get:Health")
 
-	// 全局CORS中间件
-	web.InsertFilter("/*", web.BeforeRouter, middleware.CORSMiddleware)
+	// CORS 中间件已移到 Envoy Gateway 处理
+	// web.InsertFilter("/*", web.BeforeRouter, middleware.CORSMiddleware)
 
 	// 知识库路由
 	knowledgeController := &controllers.KnowledgeController{}
@@ -24,6 +24,8 @@ func InitKnowledgeRoutes() {
 	web.Router("/api/knowledge/:id/upload-batch", knowledgeController, "post:UploadBatch")
 	web.Router("/api/knowledge/:id/process", knowledgeController, "post:ProcessDocuments")
 	web.Router("/api/knowledge/:id/search", knowledgeController, "get:Search")
+	web.Router("/api/knowledge/:id/documents", knowledgeController, "get:GetDocuments")
+	web.Router("/api/knowledge/:id/documents/:doc_id", knowledgeController, "get:GetDocument")
 	web.Router("/api/knowledge/:id/documents/:doc_id/index", knowledgeController, "post:GenerateIndex")
 	web.Router("/api/knowledge/:id/sync/notion", knowledgeController, "post:SyncNotion")
 	web.Router("/api/knowledge/:id/sync/web", knowledgeController, "post:SyncWeb")
@@ -40,8 +42,8 @@ func Init() {
 	web.Router("/", &controllers.RootController{}, "get:Index")
 	web.Router("/health", &controllers.HealthController{}, "get:Health")
 
-	// 全局CORS中间件，支持前端在不同端口访问
-	web.InsertFilter("/*", web.BeforeRouter, middleware.CORSMiddleware)
+	// CORS 中间件已移到 Envoy Gateway 处理
+	// web.InsertFilter("/*", web.BeforeRouter, middleware.CORSMiddleware)
 
 	modelController := controllers.NewModelController()
 	web.Router("/api/models", modelController, "get:Get;post:Post")

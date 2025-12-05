@@ -292,6 +292,55 @@ func (c *KnowledgeController) Search() {
 	})
 }
 
+// GET /api/knowledge/:id/documents
+func (c *KnowledgeController) GetDocuments() {
+	userID, ok := c.getAuthenticatedUserID()
+	if !ok {
+		return
+	}
+
+	kbID, ok := c.mustParseUintParam(":id")
+	if !ok {
+		return
+	}
+
+	documents, err := c.knowledgeService.GetDocuments(uint(kbID), userID)
+	if err != nil {
+		c.JSONError(http.StatusBadRequest, err.Error())
+		return
+	}
+
+	c.JSONSuccess(map[string]interface{}{
+		"documents": documents,
+	})
+}
+
+// GET /api/knowledge/:id/documents/:doc_id
+func (c *KnowledgeController) GetDocument() {
+	userID, ok := c.getAuthenticatedUserID()
+	if !ok {
+		return
+	}
+
+	kbID, ok := c.mustParseUintParam(":id")
+	if !ok {
+		return
+	}
+
+	docID, ok := c.mustParseUintParam(":doc_id")
+	if !ok {
+		return
+	}
+
+	document, err := c.knowledgeService.GetDocumentDetail(uint(kbID), uint(docID), userID)
+	if err != nil {
+		c.JSONError(http.StatusNotFound, err.Error())
+		return
+	}
+
+	c.JSONSuccess(document)
+}
+
 func (c *KnowledgeController) getAuthenticatedUserID() (uint, bool) {
 	// 简化版：直接返回默认用户ID（用于知识库功能测试）
 	// 在生产环境中，这里应该从JWT token或session中获取

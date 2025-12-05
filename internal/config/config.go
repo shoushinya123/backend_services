@@ -16,6 +16,7 @@ type Config struct {
 	Prometheus PrometheusConfig
 	Kafka      KafkaConfig
 	Consul     ConsulConfig
+	Etcd       EtcdConfig
 	Vault      VaultConfig
 	AI         AIConfig
 	FileUpload FileUploadConfig
@@ -30,6 +31,13 @@ type ConsulConfig struct {
 	ConfigPrefix string
 	ServiceName  string
 	ServiceID    string
+}
+
+type EtcdConfig struct {
+	Endpoints   []string
+	Enabled     bool
+	ServiceName string
+	ServiceID   string
 }
 
 type VaultConfig struct {
@@ -206,6 +214,10 @@ func LoadConfig() error {
 	viper.SetDefault("consul.config_prefix", "aihub/config/backend")
 	viper.SetDefault("consul.service_name", "aihub-backend")
 	viper.SetDefault("consul.service_id", "aihub-backend-1")
+	viper.SetDefault("etcd.endpoints", []string{"http://localhost:2379"})
+	viper.SetDefault("etcd.enabled", false)
+	viper.SetDefault("etcd.service_name", "aihub-backend")
+	viper.SetDefault("etcd.service_id", "aihub-backend-1")
 	viper.SetDefault("vault.address", "http://localhost:8200/v1")
 	viper.SetDefault("vault.token", "root")
 	viper.SetDefault("vault.enabled", false)
@@ -346,6 +358,25 @@ func LoadConfig() error {
 		viper.Set("consul.service_id", consulServiceID)
 	}
 
+	// Etcd configuration
+	if etcdEndpoints := os.Getenv("ETCD_ENDPOINTS"); etcdEndpoints != "" {
+		// 支持逗号分隔的endpoint列表
+		endpoints := strings.Split(etcdEndpoints, ",")
+		for i := range endpoints {
+			endpoints[i] = strings.TrimSpace(endpoints[i])
+		}
+		viper.Set("etcd.endpoints", endpoints)
+	}
+	if etcdEnabled := os.Getenv("ETCD_ENABLED"); etcdEnabled == "true" {
+		viper.Set("etcd.enabled", true)
+	}
+	if etcdServiceName := os.Getenv("ETCD_SERVICE_NAME"); etcdServiceName != "" {
+		viper.Set("etcd.service_name", etcdServiceName)
+	}
+	if etcdServiceID := os.Getenv("ETCD_SERVICE_ID"); etcdServiceID != "" {
+		viper.Set("etcd.service_id", etcdServiceID)
+	}
+
 	// Vault configuration
 	if vaultAddress := os.Getenv("VAULT_ADDRESS"); vaultAddress != "" {
 		viper.Set("vault.address", vaultAddress)
@@ -430,6 +461,12 @@ func LoadConfig() error {
 			ConfigPrefix: viper.GetString("consul.config_prefix"),
 			ServiceName:  viper.GetString("consul.service_name"),
 			ServiceID:    viper.GetString("consul.service_id"),
+		},
+		Etcd: EtcdConfig{
+			Endpoints:   viper.GetStringSlice("etcd.endpoints"),
+			Enabled:     viper.GetBool("etcd.enabled"),
+			ServiceName: viper.GetString("etcd.service_name"),
+			ServiceID:   viper.GetString("etcd.service_id"),
 		},
 		Vault: VaultConfig{
 			Address: viper.GetString("vault.address"),

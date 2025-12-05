@@ -948,6 +948,225 @@ func (s *KnowledgeService) processDocument(documentID uint) error {
 	return nil
 }
 
+// GetDocuments 获取知识库的文档列表（带状态信息）
+func (s *KnowledgeService) GetDocuments(kbID, userID uint) ([]map[string]interface{}, error) {
+	// 检查权限
+	var kb models.KnowledgeBase
+	if err := database.DB.Where("knowledge_base_id = ? AND (owner_id = ? OR is_public = ?)", kbID, userID, true).
+		First(&kb).Error; err != nil {
+		return nil, err
+	}
+
+	var documents []models.KnowledgeDocument
+	if err := database.DB.Where("knowledge_base_id = ?", kbID).
+		Order("create_time DESC").
+		Find(&documents).Error; err != nil {
+		return nil, err
+	}
+
+	result := make([]map[string]interface{}, 0, len(documents))
+	redisService := middleware.NewRedisService()
+
+	for _, doc := range documents {
+		// 统计块数量
+		var chunkCount int64
+		var vectorizedCount int64
+		database.DB.Model(&models.KnowledgeChunk{}).
+			Where("document_id = ?", doc.DocumentID).
+			Count(&chunkCount)
+		database.DB.Model(&models.KnowledgeChunk{}).
+			Where("document_id = ? AND vector_id != '' AND vector_id IS NOT NULL", doc.DocumentID).
+			Count(&vectorizedCount)
+
+		// 从 Redis 获取处理状态
+		statusKey := fmt.Sprintf("knowledge:doc:status:%d", doc.DocumentID)
+		var redisStatus map[string]interface{}
+		if redisService != nil {
+			if val, err := redisService.GetCache(statusKey); err == nil {
+				if statusMap, ok := val.(map[string]interface{}); ok {
+					redisStatus = statusMap
+				}
+			}
+		}
+
+		// 获取服务状态
+		embedderReady := s.embedder != nil && s.embedder.Ready()
+		vectorStoreReady := s.vectorStore != nil && s.vectorStore.Ready()
+		indexerReady := s.indexer != nil && s.indexer.Ready()
+
+		// 获取 Embedder 名称
+		embedderName := "未配置"
+		if embedderReady {
+			embedderName = "DashScope (阿里云)"
+		}
+
+		// 获取 Reranker 状态（从 searchEngine）
+		rerankerReady := s.searchEngine != nil && s.searchEngine.HasReranker()
+
+		docInfo := map[string]interface{}{
+			"document_id":      doc.DocumentID,
+			"knowledge_base_id": doc.KnowledgeBaseID,
+			"title":            doc.Title,
+			"source":           doc.Source,
+			"source_url":       doc.SourceURL,
+			"file_path":        doc.FilePath,
+			"status":           doc.Status,
+			"create_time":      doc.CreateTime,
+			"update_time":      doc.UpdateTime,
+			"chunk_count":      chunkCount,
+			"vectorized_count": vectorizedCount,
+			"processing_info": map[string]interface{}{
+				"redis_status":    redisStatus,
+				"embedder_ready":   embedderReady,
+				"embedder_name":    embedderName,
+				"vector_store_ready": vectorStoreReady,
+				"indexer_ready":    indexerReady,
+				"reranker_ready":   rerankerReady,
+			},
+		}
+
+		// 解析 metadata
+		if doc.Metadata != "" {
+			var metadata map[string]interface{}
+			if err := json.Unmarshal([]byte(doc.Metadata), &metadata); err == nil {
+				docInfo["metadata"] = metadata
+			}
+		}
+
+		result = append(result, docInfo)
+	}
+
+	return result, nil
+}
+
+// GetDocumentDetail 获取文档详细信息
+func (s *KnowledgeService) GetDocumentDetail(kbID, docID, userID uint) (map[string]interface{}, error) {
+	// 检查权限
+	var kb models.KnowledgeBase
+	if err := database.DB.Where("knowledge_base_id = ? AND (owner_id = ? OR is_public = ?)", kbID, userID, true).
+		First(&kb).Error; err != nil {
+		return nil, err
+	}
+
+	var doc models.KnowledgeDocument
+	if err := database.DB.Where("document_id = ? AND knowledge_base_id = ?", docID, kbID).
+		First(&doc).Error; err != nil {
+		return nil, err
+	}
+
+	// 获取所有块
+	var chunks []models.KnowledgeChunk
+	database.DB.Where("document_id = ?", docID).
+		Order("chunk_index ASC").
+		Find(&chunks)
+
+	// 统计信息
+	var totalChunks int64
+	var vectorizedChunks int64
+	var indexedChunks int64
+	database.DB.Model(&models.KnowledgeChunk{}).
+		Where("document_id = ?", docID).
+		Count(&totalChunks)
+	database.DB.Model(&models.KnowledgeChunk{}).
+		Where("document_id = ? AND vector_id != '' AND vector_id IS NOT NULL", docID).
+		Count(&vectorizedChunks)
+	database.DB.Model(&models.KnowledgeChunk{}).
+		Where("document_id = ? AND vector_id != ''", docID).
+		Count(&indexedChunks)
+
+	// 从 Redis 获取处理状态
+	redisService := middleware.NewRedisService()
+	statusKey := fmt.Sprintf("knowledge:doc:status:%d", docID)
+	var redisStatus map[string]interface{}
+	if redisService != nil {
+		if val, err := redisService.GetCache(statusKey); err == nil {
+			if statusMap, ok := val.(map[string]interface{}); ok {
+				redisStatus = statusMap
+			}
+		}
+	}
+
+	// 获取服务状态
+	embedderReady := s.embedder != nil && s.embedder.Ready()
+	vectorStoreReady := s.vectorStore != nil && s.vectorStore.Ready()
+	indexerReady := s.indexer != nil && s.indexer.Ready()
+	rerankerReady := s.searchEngine != nil && s.searchEngine.HasReranker()
+
+	embedderName := "未配置"
+	if embedderReady {
+		embedderName = "DashScope (阿里云)"
+	}
+
+	// 计算处理进度
+	progress := 0.0
+	if totalChunks > 0 {
+		progress = float64(vectorizedChunks) / float64(totalChunks) * 100
+	}
+
+	result := map[string]interface{}{
+		"document_id":      doc.DocumentID,
+		"knowledge_base_id": doc.KnowledgeBaseID,
+		"title":            doc.Title,
+		"source":           doc.Source,
+		"source_url":       doc.SourceURL,
+		"file_path":        doc.FilePath,
+		"status":           doc.Status,
+		"create_time":      doc.CreateTime,
+		"update_time":      doc.UpdateTime,
+		"statistics": map[string]interface{}{
+			"total_chunks":      totalChunks,
+			"vectorized_chunks": vectorizedChunks,
+			"indexed_chunks":    indexedChunks,
+			"progress_percent":  progress,
+		},
+		"services": map[string]interface{}{
+			"embedder": map[string]interface{}{
+				"ready": embedderReady,
+				"name":  embedderName,
+			},
+			"vector_store": map[string]interface{}{
+				"ready": vectorStoreReady,
+			},
+			"indexer": map[string]interface{}{
+				"ready": indexerReady,
+			},
+			"reranker": map[string]interface{}{
+				"ready": rerankerReady,
+			},
+		},
+		"processing_status": redisStatus,
+		"chunks": make([]map[string]interface{}, 0, len(chunks)),
+	}
+
+	// 添加块信息（简化版，不包含完整内容）
+	for _, chunk := range chunks {
+		hasVector := chunk.VectorID != "" && chunk.VectorID != "null"
+		chunkInfo := map[string]interface{}{
+			"chunk_id":    chunk.ChunkID,
+			"chunk_index": chunk.ChunkIndex,
+			"has_vector":  hasVector,
+			"vector_id":   chunk.VectorID,
+			"content_preview": func() string {
+				if len(chunk.Content) > 100 {
+					return chunk.Content[:100] + "..."
+				}
+				return chunk.Content
+			}(),
+		}
+		result["chunks"] = append(result["chunks"].([]map[string]interface{}), chunkInfo)
+	}
+
+	// 解析 metadata
+	if doc.Metadata != "" {
+		var metadata map[string]interface{}
+		if err := json.Unmarshal([]byte(doc.Metadata), &metadata); err == nil {
+			result["metadata"] = metadata
+		}
+	}
+
+	return result, nil
+}
+
 // saveKnowledgeSearch 保存知识库搜索记录
 func (s *KnowledgeService) saveKnowledgeSearch(kbID, userID uint, query string, results []map[string]interface{}) error {
 	resultsJSON, _ := json.Marshal(results)

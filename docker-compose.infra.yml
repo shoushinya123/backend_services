@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # PostgreSQL 数据库
   postgres:
@@ -97,7 +95,9 @@ services:
       - ETCD_SNAPSHOT_COUNT=50000
     volumes:
       - etcd_data:/etcd
-    command: etcd -advertise-client-urls=http://127.0.0.1:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
+    command: etcd -advertise-client-urls=http://etcd:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
+    ports:
+      - "2379:2379"
     networks:
       - ai-xia-network
     restart: unless-stopped
@@ -163,6 +163,27 @@ services:
       test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1"]
       interval: 30s
       timeout: 10s
+      retries: 5
+
+  # Envoy Gateway
+  envoy:
+    image: envoyproxy/envoy:v1.28.0
+    container_name: ai-xia-infra-envoy
+    ports:
+      - "80:80"
+      - "9901:9901"  # Admin interface
+    volumes:
+      - ./envoy/envoy.yaml:/etc/envoy/envoy.yaml:ro
+    networks:
+      - ai-xia-network
+    depends_on:
+      - etcd
+    command: /usr/local/bin/envoy -c /etc/envoy/envoy.yaml --service-cluster envoy-gateway --service-node envoy-node
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9901/ready"]
+      interval: 10s
+      timeout: 5s
       retries: 5
 
 volumes:

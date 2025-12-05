@@ -1,0 +1,174 @@
+admin:
+  address:
+    socket_address:
+      address: 0.0.0.0
+      port_value: 9901
+
+static_resources:
+  listeners:
+  # HTTP Listener - 统一入口
+  - name: listener_http
+    address:
+      socket_address:
+        address: 0.0.0.0
+        port_value: 80
+    filter_chains:
+    - filters:
+      - name: envoy.filters.network.http_connection_manager
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+          stat_prefix: ingress_http
+          access_log:
+          - name: envoy.access_loggers.stdout
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog
+          max_request_headers_kb: 60
+          stream_idle_timeout: 600s
+          request_timeout: 600s
+          http_filters:
+          - name: envoy.filters.http.cors
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.cors.v3.Cors
+          - name: envoy.filters.http.router
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+          route_config:
+            name: local_route
+            virtual_hosts:
+            - name: api
+              domains: ["*"]
+              cors:
+                allow_origin_string_match:
+                - prefix: "*"
+                allow_methods: "GET, POST, PUT, DELETE, PATCH, OPTIONS"
+                allow_headers: "Content-Type, Authorization, X-Requested-With, Accept, Origin, X-User-Id, x-user-id, X-User-ID"
+                allow_credentials: true
+                max_age: "3600"
+              routes:
+              # 知识库服务路由
+              - match:
+                  prefix: "/api/knowledge"
+                route:
+                  cluster: knowledge-service
+                  prefix_rewrite: "/api/knowledge"
+                  timeout: 600s  # 10分钟超时，支持大文件上传
+              # 模型服务路由
+              - match:
+                  prefix: "/api/models"
+                route:
+                  cluster: model-service
+                  prefix_rewrite: "/api/models"
+              # 聊天服务路由
+              - match:
+                  prefix: "/api/chat"
+                route:
+                  cluster: chat-service
+                  prefix_rewrite: "/api/chat"
+              # AI 聊天路由
+              - match:
+                  prefix: "/api/ai"
+                route:
+                  cluster: ai-chat-service
+                  prefix_rewrite: "/api/ai"
+              # 健康检查路由
+              - match:
+                  prefix: "/health"
+                route:
+                  cluster: knowledge-service
+                  prefix_rewrite: "/health"
+              # 默认路由到知识库服务
+              - match:
+                  prefix: "/"
+                route:
+                  cluster: knowledge-service
+
+  clusters:
+  # 知识库服务集群
+  - name: knowledge-service
+    type: STRICT_DNS
+    connect_timeout: 0.25s
+    lb_policy: ROUND_ROBIN
+    health_checks:
+      - timeout: 1s
+        interval: 10s
+        unhealthy_threshold: 2
+        healthy_threshold: 1
+        http_health_check:
+          path: /health
+    load_assignment:
+      cluster_name: knowledge-service
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: ai-xia-services-knowledge
+                port_value: 8001
+
+  # 模型服务集群（示例，如果存在）
+  - name: model-service
+    type: STRICT_DNS
+    connect_timeout: 0.25s
+    lb_policy: ROUND_ROBIN
+    health_checks:
+      - timeout: 1s
+        interval: 10s
+        unhealthy_threshold: 2
+        healthy_threshold: 1
+        http_health_check:
+          path: /health
+    load_assignment:
+      cluster_name: model-service
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: ai-xia-services-knowledge
+                port_value: 8001
+
+  # 聊天服务集群（示例，如果存在）
+  - name: chat-service
+    type: STRICT_DNS
+    connect_timeout: 0.25s
+    lb_policy: ROUND_ROBIN
+    health_checks:
+      - timeout: 1s
+        interval: 10s
+        unhealthy_threshold: 2
+        healthy_threshold: 1
+        http_health_check:
+          path: /health
+    load_assignment:
+      cluster_name: chat-service
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: ai-xia-services-knowledge
+                port_value: 8001
+
+  # AI 聊天服务集群（示例，如果存在）
+  - name: ai-chat-service
+    type: STRICT_DNS
+    connect_timeout: 0.25s
+    lb_policy: ROUND_ROBIN
+    health_checks:
+      - timeout: 1s
+        interval: 10s
+        unhealthy_threshold: 2
+        healthy_threshold: 1
+        http_health_check:
+          path: /health
+    load_assignment:
+      cluster_name: ai-chat-service
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: ai-xia-services-knowledge
+                port_value: 8001
+
+
