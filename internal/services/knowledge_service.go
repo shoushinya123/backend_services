@@ -10,6 +10,7 @@ import (
 	"mime/multipart"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -758,6 +759,45 @@ func (s *KnowledgeService) SearchKnowledgeBase(kbID, userID uint, query string, 
 	}
 
 	return results, nil
+}
+
+// SearchAllKnowledgeBases 在用户可访问的所有知识库中搜索
+func (s *KnowledgeService) SearchAllKnowledgeBases(userID uint, query string, topK int) ([]map[string]interface{}, error) {
+	if topK <= 0 {
+		topK = 5
+	}
+
+	// 获取用户可访问的知识库（限制 200 个以避免过大）
+	bases, _, err := s.GetKnowledgeBases(userID, 1, 200, "")
+	if err != nil {
+		return nil, err
+	}
+
+	var allResults []map[string]interface{}
+	for _, kb := range bases {
+		results, err := s.SearchKnowledgeBase(kb.KnowledgeBaseID, userID, query, topK)
+		if err != nil {
+			log.Printf("[search] 搜索知识库 %d 失败: %v", kb.KnowledgeBaseID, err)
+			continue
+		}
+		for _, r := range results {
+			r["knowledge_base_id"] = kb.KnowledgeBaseID
+			r["knowledge_base_name"] = kb.Name
+			allResults = append(allResults, r)
+		}
+	}
+
+	// 按分数排序，最多返回 50 条
+	sort.Slice(allResults, func(i, j int) bool {
+		si, _ := allResults[i]["score"].(float64)
+		sj, _ := allResults[j]["score"].(float64)
+		return si > sj
+	})
+	if len(allResults) > 50 {
+		allResults = allResults[:50]
+	}
+
+	return allResults, nil
 }
 
 func (s *KnowledgeService) enrichMatchMetadata(matches []knowledge.SearchMatch) []knowledge.SearchMatch {
