@@ -63,50 +63,59 @@ func NewMinIOService() (*MinIOService, error) {
 		config: cfg,
 	}
 
-	// 确保bucket存在（带重试逻辑）
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// 确保bucket存在（带重试逻辑，最多等待30秒）
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// 重试3次
+	// 重试5次，每次等待更长时间（给MinIO服务启动时间）
 	var exists bool
 	var bucketErr error
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 5; i++ {
 		exists, bucketErr = client.BucketExists(ctx, cfg.Bucket)
 		if bucketErr == nil {
 			break
 		}
-		if i < 2 {
-			time.Sleep(time.Second * time.Duration(i+1))
+		// 如果是连接错误，等待更长时间后重试
+		if i < 4 {
+			waitTime := time.Second * time.Duration((i+1)*2) // 2s, 4s, 6s, 8s
+			time.Sleep(waitTime)
 		}
 	}
 
 	if bucketErr != nil {
-		return nil, fmt.Errorf("failed to check bucket existence after retries: %w", bucketErr)
+		// 如果检查失败，尝试直接创建（可能MinIO刚启动，bucket还不存在）
+		log.Printf("⚠️  Failed to check bucket existence, attempting to create: %v", bucketErr)
 	}
 
 	if !exists {
 		// 创建 bucket，带重试
 		var createErr error
-		for i := 0; i < 3; i++ {
+		for i := 0; i < 5; i++ {
 			createErr = client.MakeBucket(ctx, cfg.Bucket, minio.MakeBucketOptions{
 				Region: "", // MinIO 不需要 region
 			})
 			if createErr == nil {
+				log.Printf("✅ Successfully created MinIO bucket: %s", cfg.Bucket)
 				break
 			}
 			// 如果 bucket 已存在（可能在其他地方创建了），忽略错误
-			if strings.Contains(createErr.Error(), "BucketAlreadyExists") || 
-			   strings.Contains(createErr.Error(), "BucketAlreadyOwnedByYou") {
+			errStr := createErr.Error()
+			if strings.Contains(errStr, "BucketAlreadyExists") || 
+			   strings.Contains(errStr, "BucketAlreadyOwnedByYou") {
+				log.Printf("ℹ️  Bucket %s already exists", cfg.Bucket)
 				createErr = nil
 				break
 			}
-			if i < 2 {
-				time.Sleep(time.Second * time.Duration(i+1))
+			if i < 4 {
+				waitTime := time.Second * time.Duration((i+1)*2)
+				time.Sleep(waitTime)
 			}
 		}
 		if createErr != nil {
 			return nil, fmt.Errorf("failed to create bucket %s after retries: %w", cfg.Bucket, createErr)
 		}
+	} else {
+		log.Printf("✅ MinIO bucket %s already exists", cfg.Bucket)
 	}
 
 	globalMinIOService = service
