@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>知识库服务测试页面</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            opacity: 0.9;
+        }
+
+        .config-section {
+            padding: 20px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        .config-section input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e9ecef;
+            border-radius: 6px;
+            font-size: 14px;
+            margin-top: 8px;
+        }
+
+        .config-section label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 5px;
+            color: #495057;
+        }
+
+        .content {
+            padding: 30px;
+        }
+
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border: 1px solid #e9ecef;
+        }
+
+        .section h2 {
+            color: #495057;
+            margin-bottom: 15px;
+            font-size: 20px;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 5px;
+            color: #495057;
+        }
+
+        .form-group input,
+        .form-group textarea,
+        .form-group select {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e9ecef;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        .form-group input:focus,
+        .form-group textarea:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .form-group textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin-right: 10px;
+            margin-top: 10px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+        }
+
+        .btn-success {
+            background: #28a745;
+        }
+
+        .btn-danger {
+            background: #dc3545;
+        }
+
+        .result {
+            margin-top: 15px;
+            padding: 15px;
+            background: white;
+            border-radius: 6px;
+            border: 1px solid #e9ecef;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .result pre {
+            margin: 0;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        .result.success {
+            border-left: 4px solid #28a745;
+            background: #d4edda;
+        }
+
+        .result.error {
+            border-left: 4px solid #dc3545;
+            background: #f8d7da;
+        }
+
+        .result.info {
+            border-left: 4px solid #17a2b8;
+            background: #d1ecf1;
+        }
+
+        .knowledge-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .knowledge-card {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #e9ecef;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .knowledge-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+
+        .knowledge-card h3 {
+            color: #667eea;
+            margin-bottom: 8px;
+        }
+
+        .knowledge-card p {
+            color: #6c757d;
+            font-size: 13px;
+            margin-bottom: 5px;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-top: 5px;
+        }
+
+        .status-active {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-inactive {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-left: 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📚 知识库服务测试页面</h1>
+            <p>测试知识库服务的各项功能</p>
+        </div>
+
+        <div class="config-section">
+            <label for="apiBaseUrl">API 基础地址:</label>
+            <input type="text" id="apiBaseUrl" value="http://localhost:8001" placeholder="http://localhost:8001">
+        </div>
+
+        <div class="content">
+            <!-- 健康检查 -->
+            <div class="section">
+                <h2>🏥 健康检查</h2>
+                <button class="btn" onclick="checkHealth()">检查服务状态</button>
+                <div id="healthResult"></div>
+            </div>
+
+            <!-- 知识库列表 -->
+            <div class="section">
+                <h2>📋 知识库列表</h2>
+                <button class="btn" onclick="listKnowledgeBases()">刷新列表</button>
+                <div id="knowledgeListResult"></div>
+            </div>
+
+            <!-- 创建知识库 -->
+            <div class="section">
+                <h2>➕ 创建知识库</h2>
+                <div class="form-group">
+                    <label for="kbName">知识库名称:</label>
+                    <input type="text" id="kbName" placeholder="输入知识库名称">
+                </div>
+                <div class="form-group">
+                    <label for="kbDescription">描述:</label>
+                    <textarea id="kbDescription" placeholder="输入知识库描述"></textarea>
+                </div>
+                <button class="btn btn-success" onclick="createKnowledgeBase()">创建知识库</button>
+                <div id="createResult"></div>
+            </div>
+
+            <!-- 搜索 -->
+            <div class="section">
+                <h2>🔍 搜索知识库</h2>
+                <div class="form-group">
+                    <label for="searchKbId">知识库 ID:</label>
+                    <input type="number" id="searchKbId" placeholder="输入知识库 ID">
+                </div>
+                <div class="form-group">
+                    <label for="searchQuery">搜索内容:</label>
+                    <input type="text" id="searchQuery" placeholder="输入搜索关键词">
+                </div>
+                <div class="form-group">
+                    <label for="searchType">搜索类型:</label>
+                    <select id="searchType">
+                        <option value="hybrid">混合搜索 (Hybrid)</option>
+                        <option value="vector">向量搜索 (Vector)</option>
+                        <option value="fulltext">全文搜索 (Fulltext)</option>
+                    </select>
+                </div>
+                <button class="btn" onclick="searchKnowledge()">搜索</button>
+                <div id="searchResult"></div>
+            </div>
+
+            <!-- 上传文档 -->
+            <div class="section">
+                <h2>📄 上传文档</h2>
+                <div class="form-group">
+                    <label for="uploadKbId">知识库 ID:</label>
+                    <input type="number" id="uploadKbId" placeholder="输入知识库 ID">
+                </div>
+                <div class="form-group">
+                    <label for="fileInput">选择文件:</label>
+                    <input type="file" id="fileInput" accept=".pdf,.doc,.docx,.txt,.epub">
+                </div>
+                <button class="btn" onclick="uploadDocument()">上传文档</button>
+                <div id="uploadResult"></div>
+            </div>
+
+            <!-- 处理文档 -->
+            <div class="section">
+                <h2>⚙️ 处理文档</h2>
+                <div class="form-group">
+                    <label for="processKbId">知识库 ID:</label>
+                    <input type="number" id="processKbId" placeholder="输入知识库 ID">
+                </div>
+                <button class="btn" onclick="processDocuments()">处理所有文档</button>
+                <div id="processResult"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = () => document.getElementById('apiBaseUrl').value || 'http://localhost:8001';
+
+        function showResult(elementId, data, type = 'info') {
+            const element = document.getElementById(elementId);
+            const className = `result ${type}`;
+            element.innerHTML = `<div class="${className}"><pre>${JSON.stringify(data, null, 2)}</pre></div>`;
+        }
+
+        function showError(elementId, error) {
+            showResult(elementId, { error: error.message || error }, 'error');
+        }
+
+        async function apiCall(endpoint, options = {}) {
+            try {
+                const url = `${API_BASE()}${endpoint}`;
+                const response = await fetch(url, {
+                    ...options,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...options.headers
+                    }
+                });
+
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.error || `HTTP ${response.status}: ${response.statusText}`);
+                }
+                return data;
+            } catch (error) {
+                throw error;
+            }
+        }
+
+        async function checkHealth() {
+            try {
+                const result = document.getElementById('healthResult');
+                result.innerHTML = '<div class="loading"></div>';
+                
+                const data = await apiCall('/health');
+                showResult('healthResult', data, 'success');
+            } catch (error) {
+                showError('healthResult', error);
+            }
+        }
+
+        async function listKnowledgeBases() {
+            try {
+                const result = document.getElementById('knowledgeListResult');
+                result.innerHTML = '<div class="loading"></div>';
+                
+                const data = await apiCall('/api/knowledge');
+                
+                if (data.success && data.data && data.data.knowledge_bases) {
+                    const kbs = data.data.knowledge_bases;
+                    let html = '<div class="knowledge-list">';
+                    kbs.forEach(kb => {
+                        html += `
+                            <div class="knowledge-card" onclick="selectKnowledgeBase(${kb.knowledge_base_id})">
+                                <h3>${kb.name}</h3>
+                                <p>ID: ${kb.knowledge_base_id}</p>
+                                <p>${kb.description || '无描述'}</p>
+                                <span class="status-badge ${kb.status === 'active' ? 'status-active' : 'status-inactive'}">
+                                    ${kb.status || 'unknown'}
+                                </span>
+                            </div>
+                        `;
+                    });
+                    html += '</div>';
+                    result.innerHTML = html;
+                } else {
+                    showResult('knowledgeListResult', data, 'info');
+                }
+            } catch (error) {
+                showError('knowledgeListResult', error);
+            }
+        }
+
+        function selectKnowledgeBase(kbId) {
+            document.getElementById('searchKbId').value = kbId;
+            document.getElementById('uploadKbId').value = kbId;
+            document.getElementById('processKbId').value = kbId;
+        }
+
+        async function createKnowledgeBase() {
+            try {
+                const name = document.getElementById('kbName').value;
+                const description = document.getElementById('kbDescription').value;
+
+                if (!name) {
+                    alert('请输入知识库名称');
+                    return;
+                }
+
+                const result = document.getElementById('createResult');
+                result.innerHTML = '<div class="loading"></div>';
+
+                const data = await apiCall('/api/knowledge', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        name: name,
+                        description: description
+                    })
+                });
+
+                showResult('createResult', data, 'success');
+                
+                // 清空表单
+                document.getElementById('kbName').value = '';
+                document.getElementById('kbDescription').value = '';
+                
+                // 刷新列表
+                setTimeout(() => listKnowledgeBases(), 1000);
+            } catch (error) {
+                showError('createResult', error);
+            }
+        }
+
+        async function searchKnowledge() {
+            try {
+                const kbId = document.getElementById('searchKbId').value;
+                const query = document.getElementById('searchQuery').value;
+                const type = document.getElementById('searchType').value;
+
+                if (!kbId || !query) {
+                    alert('请输入知识库 ID 和搜索内容');
+                    return;
+                }
+
+                const result = document.getElementById('searchResult');
+                result.innerHTML = '<div class="loading"></div>';
+
+                const data = await apiCall(`/api/knowledge/${kbId}/search?q=${encodeURIComponent(query)}&type=${type}`);
+                showResult('searchResult', data, 'success');
+            } catch (error) {
+                showError('searchResult', error);
+            }
+        }
+
+        async function uploadDocument() {
+            try {
+                const kbId = document.getElementById('uploadKbId').value;
+                const fileInput = document.getElementById('fileInput');
+                const file = fileInput.files[0];
+
+                if (!kbId) {
+                    alert('请输入知识库 ID');
+                    return;
+                }
+
+                if (!file) {
+                    alert('请选择文件');
+                    return;
+                }
+
+                const result = document.getElementById('uploadResult');
+                result.innerHTML = '<div class="loading"></div>';
+
+                const formData = new FormData();
+                formData.append('file', file);
+
+                const url = `${API_BASE()}/api/knowledge/${kbId}/upload`;
+                const response = await fetch(url, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.error || `HTTP ${response.status}`);
+                }
+
+                showResult('uploadResult', data, 'success');
+                fileInput.value = '';
+            } catch (error) {
+                showError('uploadResult', error);
+            }
+        }
+
+        async function processDocuments() {
+            try {
+                const kbId = document.getElementById('processKbId').value;
+
+                if (!kbId) {
+                    alert('请输入知识库 ID');
+                    return;
+                }
+
+                const result = document.getElementById('processResult');
+                result.innerHTML = '<div class="loading"></div>';
+
+                const data = await apiCall(`/api/knowledge/${kbId}/process`, {
+                    method: 'POST'
+                });
+
+                showResult('processResult', data, 'success');
+            } catch (error) {
+                showError('processResult', error);
+            }
+        }
+
+        // 页面加载时自动检查健康状态
+        window.addEventListener('load', () => {
+            checkHealth();
+            listKnowledgeBases();
+        });
+    </script>
+</body>
+</html>
+

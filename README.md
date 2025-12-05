@@ -307,9 +307,25 @@ docker network inspect backend_services-main_ai-xia-network
 └── README.md                   # 本文档
 ```
 
-## 🧪 测试示例
+## 🧪 测试
 
-### 创建知识库
+### 使用 Web 测试页面（推荐）
+
+项目提供了一个 HTML 测试页面，可以方便地测试所有功能：
+
+1. 打开 `test_knowledge.html` 文件（在浏览器中打开）
+2. 配置 API 地址（默认：http://localhost:8001）
+3. 使用界面测试各项功能：
+   - 健康检查
+   - 创建知识库
+   - 查询知识库列表
+   - 上传文档
+   - 处理文档
+   - 搜索知识库
+
+### 使用 curl 测试
+
+#### 创建知识库
 ```bash
 curl -X POST http://localhost:8001/api/knowledge \
   -H "Content-Type: application/json" \
@@ -319,12 +335,12 @@ curl -X POST http://localhost:8001/api/knowledge \
   }'
 ```
 
-### 查询知识库列表
+#### 查询知识库列表
 ```bash
 curl http://localhost:8001/api/knowledge
 ```
 
-### 搜索
+#### 搜索
 ```bash
 curl "http://localhost:8001/api/knowledge/1/search?q=测试&type=hybrid"
 ```
