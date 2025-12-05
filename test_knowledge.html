@@ -484,7 +484,7 @@
                 const result = document.getElementById('searchResult');
                 result.innerHTML = '<div class="loading"></div>';
 
-                const data = await apiCall(`/api/knowledge/${kbId}/search?q=${encodeURIComponent(query)}&type=${type}`);
+                const data = await apiCall(`/api/knowledge/${kbId}/search?query=${encodeURIComponent(query)}&type=${type}`);
                 showResult('searchResult', data, 'success');
             } catch (error) {
                 showError('searchResult', error);
