@@ -1,0 +1,78 @@
+# 知识库微服务 Dockerfile
+# 使用本地已有的golang:1.25-alpine，允许自动下载更新的Go工具链
+FROM golang:1.25-alpine AS builder
+
+# 设置代理（构建时）
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG http_proxy
+ARG https_proxy
+ENV HTTP_PROXY=${HTTP_PROXY}
+ENV HTTPS_PROXY=${HTTPS_PROXY}
+ENV http_proxy=${http_proxy}
+ENV https_proxy=${https_proxy}
+
+# 设置工作目录
+WORKDIR /app
+
+# 安装必要的工具
+RUN apk add --no-cache git make
+
+# 设置Go工具链自动下载（允许使用更新的Go版本）
+ENV GOTOOLCHAIN=auto
+
+# 支持代理配置（构建时）
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG http_proxy
+ARG https_proxy
+ARG NO_PROXY
+ARG no_proxy
+
+ENV HTTP_PROXY=${HTTP_PROXY}
+ENV HTTPS_PROXY=${HTTPS_PROXY}
+ENV http_proxy=${http_proxy}
+ENV https_proxy=${https_proxy}
+ENV NO_PROXY=${NO_PROXY}
+ENV no_proxy=${no_proxy}
+
+# 复制go mod文件
+COPY go.mod go.sum ./
+RUN go mod download
+
+# 复制源代码
+COPY . .
+
+# 更新 go.mod（修复依赖）
+RUN go mod tidy || true
+
+# 构建知识库服务（使用 knowledge 构建标签）
+RUN CGO_ENABLED=0 GOOS=linux go build -tags=knowledge -a -installsuffix cgo -o knowledge-service ./cmd/knowledge/main.go
+
+# 运行阶段（使用golang镜像中的alpine，避免网络问题）
+FROM golang:1.25-alpine
+
+# 设置代理（运行时，如果需要）
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ENV HTTP_PROXY=${HTTP_PROXY}
+ENV HTTPS_PROXY=${HTTPS_PROXY}
+
+# 安装ca证书和wget（用于健康检查）
+RUN apk --no-cache add ca-certificates tzdata wget
+
+WORKDIR /root/
+
+# 从构建阶段复制二进制文件
+COPY --from=builder /app/knowledge-service .
+
+# 暴露端口
+EXPOSE 8001
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
+  CMD wget --quiet --tries=1 --spider http://localhost:8001/health || exit 1
+
+# 运行服务
+CMD ["./knowledge-service"]
+

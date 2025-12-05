@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  # 知识库微服务
+  ai-xia-services-knowledge:
+    build:
+      context: .
+      dockerfile: Dockerfile.knowledge
+    container_name: ai-xia-services-knowledge
+    environment:
+      # 连接到基础设施服务（使用服务名）
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/aihub?sslmode=disable
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      ELASTICSEARCH_URL: http://elasticsearch:9200
+      MILVUS_ADDRESS: milvus:19530
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      KAFKA_BROKERS: kafka:9092
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY}
+      DASHSCOPE_RERANK_MODEL: gte-rerank
+      SERVER_PORT: 8001
+      # 代理配置
+      HTTP_PROXY: http://host.docker.internal:12334
+      HTTPS_PROXY: http://host.docker.internal:12334
+      http_proxy: http://host.docker.internal:12334
+      https_proxy: http://host.docker.internal:12334
+      NO_PROXY: localhost,127.0.0.1,postgres,redis,elasticsearch,milvus,minio,kafka
+      no_proxy: localhost,127.0.0.1,postgres,redis,elasticsearch,milvus,minio,kafka
+    ports:
+      - "8001:8001"
+    networks:
+      - ai-xia-network
+    # 注意：基础设施服务在另一个 compose 文件中，这里不设置 depends_on
+    # 服务启动时会自动等待网络就绪
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  ai-xia-network:
+    external: true
+    name: ai-xia-network
+
