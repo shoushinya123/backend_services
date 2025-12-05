@@ -693,7 +693,7 @@
                 
                 // 美化显示搜索结果
                 if (data.success && data.data) {
-                    const results = data.data.results || [];
+                    const results = Array.isArray(data.data.results) ? data.data.results : [];
                     let html = `<div style="margin-top: 15px;">
                         <h3 style="color: #667eea; margin-bottom: 10px;">
                             ${searchAll ? '🌐 全库搜索结果' : '📚 知识库搜索结果'} 
