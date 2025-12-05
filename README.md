@@ -356,7 +356,7 @@ go build -tags=knowledge -o knowledge-service ./cmd/knowledge/main.go
 
 ## 📄 许可证
 
-[根据项目实际情况填写]
+MIT License
 
 ## 🤝 贡献
 
