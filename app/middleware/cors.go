@@ -16,13 +16,17 @@ func CORSMiddleware(ctx *context.Context) {
 		"http://127.0.0.1:5173",
 		"http://127.0.0.1:3000",
 		"http://127.0.0.1:9091",
+		"null", // file:// 协议会发送 null 作为 Origin
 	}
 	
 	// 检查源是否在允许列表中
 	allowed := false
-	if origin == "" {
-		// 如果没有Origin头（例如同源请求），允许通过
+	if origin == "" || origin == "null" {
+		// 如果没有Origin头（例如同源请求或file://协议），允许通过
 		allowed = true
+		if origin == "null" {
+			ctx.Output.Header("Access-Control-Allow-Origin", "*")
+		}
 	} else {
 		for _, allowedOrigin := range allowedOrigins {
 			if origin == allowedOrigin {
@@ -32,11 +36,13 @@ func CORSMiddleware(ctx *context.Context) {
 		}
 	}
 	
-	if allowed && origin != "" {
+	if allowed && origin != "" && origin != "null" {
 		ctx.Output.Header("Access-Control-Allow-Origin", origin)
-	} else if origin != "" {
+	} else if origin != "" && origin != "null" {
 		// 如果源不在允许列表中，仍然设置CORS头（开发环境）
 		ctx.Output.Header("Access-Control-Allow-Origin", origin)
+	} else if origin == "" {
+		// 同源请求，不设置 CORS 头
 	}
 	
 	// 设置CORS响应头

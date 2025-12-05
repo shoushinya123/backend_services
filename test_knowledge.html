@@ -264,6 +264,9 @@
         <div class="header">
             <h1>📚 知识库服务测试页面</h1>
             <p>测试知识库服务的各项功能</p>
+            <p style="font-size: 12px; margin-top: 10px; opacity: 0.8;">
+                💡 提示：如果遇到 CORS 错误，请使用 HTTP 服务器打开此页面（如：python -m http.server 8080）
+            </p>
         </div>
 
         <div class="config-section">
@@ -368,20 +371,47 @@
         async function apiCall(endpoint, options = {}) {
             try {
                 const url = `${API_BASE()}${endpoint}`;
+                
+                // 如果是文件上传，不设置 Content-Type，让浏览器自动设置
+                const headers = {};
+                if (!(options.body instanceof FormData)) {
+                    headers['Content-Type'] = 'application/json';
+                }
+                
                 const response = await fetch(url, {
                     ...options,
                     headers: {
-                        'Content-Type': 'application/json',
+                        ...headers,
                         ...options.headers
-                    }
+                    },
+                    mode: 'cors', // 明确指定 CORS 模式
+                    credentials: 'omit' // 不发送 cookies
                 });
 
-                const data = await response.json();
+                // 检查响应内容类型
+                const contentType = response.headers.get('content-type');
+                let data;
+                
+                if (contentType && contentType.includes('application/json')) {
+                    data = await response.json();
+                } else {
+                    const text = await response.text();
+                    try {
+                        data = JSON.parse(text);
+                    } catch {
+                        throw new Error(`服务器返回非JSON格式: ${text.substring(0, 100)}`);
+                    }
+                }
+                
                 if (!response.ok) {
-                    throw new Error(data.error || `HTTP ${response.status}: ${response.statusText}`);
+                    throw new Error(data.error || data.message || `HTTP ${response.status}: ${response.statusText}`);
                 }
                 return data;
             } catch (error) {
+                // 处理 CORS 错误
+                if (error.message.includes('CORS') || error.message.includes('fetch')) {
+                    throw new Error('CORS 错误：请确保服务已启动且 CORS 配置正确。如果使用 file:// 协议，建议使用 HTTP 服务器（如：python -m http.server 8080）');
+                }
                 throw error;
             }
         }
