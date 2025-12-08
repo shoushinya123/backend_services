@@ -1,0 +1,51 @@
+{
+  "id": "openai",
+  "name": "OpenAI插件",
+  "version": "1.0.0",
+  "description": "支持OpenAI的Embedding功能",
+  "author": "AI Hub",
+  "license": "MIT",
+  "provider": "openai",
+  "capabilities": [
+    {
+      "type": "embedding",
+      "models": [
+        "text-embedding-3-small",
+        "text-embedding-3-large",
+        "text-embedding-ada-002"
+      ]
+    }
+  ],
+  "dependencies": {},
+  "min_version": "1.0.0",
+  "max_version": "2.0.0",
+  "config_schema": {
+    "type": "object",
+    "required": ["api_key"],
+    "properties": {
+      "api_key": {
+        "type": "string",
+        "description": "OpenAI API Key",
+        "secret": true
+      },
+      "base_url": {
+        "type": "string",
+        "description": "API Base URL (for OpenAI-compatible APIs)",
+        "default": "https://api.openai.com/v1"
+      },
+      "embedding_model": {
+        "type": "string",
+        "description": "Default embedding model",
+        "default": "text-embedding-3-small"
+      },
+      "dimensions": {
+        "type": "integer",
+        "description": "Vector dimensions (for text-embedding-3 models)",
+        "default": 1536,
+        "minimum": 256,
+        "maximum": 3072
+      }
+    }
+  }
+}
+

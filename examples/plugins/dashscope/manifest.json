@@ -1,0 +1,75 @@
+{
+  "id": "dashscope",
+  "name": "阿里云DashScope插件",
+  "version": "1.0.0",
+  "description": "支持阿里云通义千问的Embedding、Rerank和Chat功能",
+  "author": "AI Hub",
+  "license": "MIT",
+  "provider": "aliyun",
+  "capabilities": [
+    {
+      "type": "embedding",
+      "models": [
+        "text-embedding-v1",
+        "text-embedding-v2",
+        "text-embedding-v3",
+        "text-embedding-v4"
+      ]
+    },
+    {
+      "type": "rerank",
+      "models": ["gte-rerank"]
+    },
+    {
+      "type": "chat",
+      "models": [
+        "qwen-turbo",
+        "qwen-plus",
+        "qwen-max",
+        "qwen-max-longcontext"
+      ]
+    }
+  ],
+  "dependencies": {},
+  "min_version": "1.0.0",
+  "max_version": "2.0.0",
+  "config_schema": {
+    "type": "object",
+    "required": ["api_key"],
+    "properties": {
+      "api_key": {
+        "type": "string",
+        "description": "DashScope API Key",
+        "secret": true
+      },
+      "base_url": {
+        "type": "string",
+        "description": "API Base URL",
+        "default": "https://dashscope.aliyuncs.com/compatible-mode/v1"
+      },
+      "embedding_model": {
+        "type": "string",
+        "description": "Default embedding model",
+        "default": "text-embedding-v4"
+      },
+      "rerank_model": {
+        "type": "string",
+        "description": "Default rerank model",
+        "default": "gte-rerank"
+      },
+      "chat_model": {
+        "type": "string",
+        "description": "Default chat model",
+        "default": "qwen-turbo"
+      },
+      "timeout": {
+        "type": "integer",
+        "description": "Request timeout in seconds",
+        "default": 30,
+        "minimum": 1,
+        "maximum": 300
+      }
+    }
+  }
+}
+

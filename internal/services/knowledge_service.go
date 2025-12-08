@@ -19,6 +19,7 @@ import (
 	"github.com/aihub/backend-go/internal/knowledge"
 	"github.com/aihub/backend-go/internal/middleware"
 	"github.com/aihub/backend-go/internal/models"
+	"github.com/aihub/backend-go/internal/plugins"
 )
 
 // KnowledgeService 知识库服务
@@ -30,6 +31,7 @@ type KnowledgeService struct {
 	indexer      knowledge.FulltextIndexer
 	searchEngine *knowledge.HybridSearchEngine
 	providerSvc  *ProviderService
+	pluginMgr    *plugins.PluginManager // 插件管理器
 }
 
 // NewKnowledgeService 创建知识库服务实例
@@ -37,7 +39,21 @@ func NewKnowledgeService() *KnowledgeService {
 	cfg := config.AppConfig
 	chunker := knowledge.NewChunker(cfg.Knowledge.ChunkSize, cfg.Knowledge.ChunkOverlap)
 	providerSvc := NewProviderService()
-	embedder := selectEmbeddingProvider(cfg, providerSvc)
+	
+	// 初始化插件管理器
+	pluginMgr, err := plugins.NewPluginManager(plugins.ManagerConfig{
+		PluginDir:    "./internal/plugin_storage",
+		TempDir:      "./tmp/plugins",
+		AutoDiscover: true,
+		AutoLoad:     true,
+	})
+	if err != nil {
+		log.Printf("[knowledge] Failed to initialize plugin manager: %v", err)
+		pluginMgr = nil
+	}
+	
+	// 优先使用插件系统，降级到原有方式
+	embedder := selectEmbeddingProviderWithPlugin(cfg, providerSvc, pluginMgr)
 
 	var indexer knowledge.FulltextIndexer
 	if cfg.Knowledge.Search.Provider == "elasticsearch" {
@@ -100,6 +116,44 @@ func NewKnowledgeService() *KnowledgeService {
 		searchEngine: knowledge.NewHybridSearchEngine(indexer, vectorStore, embedder, reranker),
 		providerSvc:  providerSvc,
 	}
+}
+
+// selectEmbeddingProviderWithPlugin 选择Embedding提供商（优先使用插件系统）
+func selectEmbeddingProviderWithPlugin(cfg *config.Config, providerSvc *ProviderService, pluginMgr *plugins.PluginManager) knowledge.Embedder {
+	// 1. 优先尝试从插件系统获取
+	if pluginMgr != nil {
+		embedCfg := cfg.Knowledge.Embedding
+		providerCode := strings.TrimSpace(embedCfg.ProviderCode)
+		modelCode := strings.TrimSpace(embedCfg.ModelCode)
+		
+		if providerCode != "" {
+			// 尝试按提供商查找插件
+			entries := pluginMgr.ListPlugins()
+			for _, entry := range entries {
+				if entry.Metadata.Provider == providerCode && entry.State == plugins.StateActive {
+					if entry.Metadata.HasCapability(plugins.CapabilityEmbedding) {
+						if modelCode == "" || entry.Metadata.SupportsModel(plugins.CapabilityEmbedding, modelCode) {
+							if embedderPlugin, ok := entry.Plugin.(plugins.EmbedderPlugin); ok {
+								log.Printf("[knowledge] Using plugin embedder: %s", entry.Metadata.ID)
+								return plugins.NewEmbedderAdapter(embedderPlugin)
+							}
+						}
+					}
+				}
+			}
+			
+			// 尝试按能力类型查找
+			if embedderPlugin, err := pluginMgr.FindPluginByCapability(plugins.CapabilityEmbedding, modelCode); err == nil {
+				if ep, ok := embedderPlugin.(plugins.EmbedderPlugin); ok {
+					log.Printf("[knowledge] Using plugin embedder: %s", embedderPlugin.Metadata().ID)
+					return plugins.NewEmbedderAdapter(ep)
+				}
+			}
+		}
+	}
+	
+	// 2. 降级到原有方式
+	return selectEmbeddingProvider(cfg, providerSvc)
 }
 
 func selectEmbeddingProvider(cfg *config.Config, providerSvc *ProviderService) knowledge.Embedder {
@@ -207,6 +261,23 @@ func defaultEmbedder(cfg *config.Config) knowledge.Embedder {
 	}
 	
 	return &knowledge.NoopEmbedder{}
+}
+
+// selectRerankProviderWithPlugin 选择Rerank提供商（优先使用插件系统）
+func selectRerankProviderWithPlugin(cfg *config.Config, providerSvc *ProviderService, pluginMgr *plugins.PluginManager) knowledge.Reranker {
+	// 1. 优先尝试从插件系统获取
+	if pluginMgr != nil {
+		// 尝试查找Rerank插件
+		if rerankerPlugin, err := pluginMgr.FindPluginByCapability(plugins.CapabilityRerank, ""); err == nil {
+			if rp, ok := rerankerPlugin.(plugins.RerankerPlugin); ok {
+				log.Printf("[knowledge] Using plugin reranker: %s", rerankerPlugin.Metadata().ID)
+				return plugins.NewRerankerAdapter(rp)
+			}
+		}
+	}
+	
+	// 2. 降级到原有方式
+	return selectRerankProvider(cfg, providerSvc)
 }
 
 // selectRerankProvider 选择rerank提供商
