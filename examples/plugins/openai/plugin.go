@@ -166,6 +166,19 @@ func (p *OpenAIPlugin) Dimensions() int {
 	return p.dimensions
 }
 
+// GetModels 获取支持的模型列表
+func (p *OpenAIPlugin) GetModels(apiKey string) ([]string, error) {
+	// OpenAI插件直接返回manifest中声明的模型
+	meta := p.Metadata()
+	models := []string{}
+	for _, cap := range meta.Capabilities {
+		if cap.Type == plugins.CapabilityEmbedding {
+			models = append(models, cap.Models...)
+		}
+	}
+	return models, nil
+}
+
 // 确保实现所有接口
 var (
 	_ plugins.Plugin         = (*OpenAIPlugin)(nil)

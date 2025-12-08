@@ -46,3 +46,14 @@ func (p *BaseEmbedderPlugin) EmbedBatch(ctx context.Context, texts []string) ([]
 	return results, nil
 }
 
+// GetModels 默认实现，返回manifest中声明的模型
+func (p *BaseEmbedderPlugin) GetModels(apiKey string) ([]string, error) {
+	meta := p.Metadata()
+	for _, cap := range meta.Capabilities {
+		if cap.Type == plugins.CapabilityEmbedding {
+			return cap.Models, nil
+		}
+	}
+	return []string{}, nil
+}
+

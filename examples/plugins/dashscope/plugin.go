@@ -36,6 +36,35 @@ type DashScopePlugin struct {
 	chatModel string
 }
 
+// GetModels 实现EmbedderPlugin的GetModels方法
+func (p *DashScopePlugin) GetModels(apiKey string) ([]string, error) {
+	// 如果提供了API Key，可以调用DashScope API获取可用模型
+	// 这里简化实现，直接返回manifest中声明的模型
+	meta := p.Metadata()
+	models := []string{}
+	for _, cap := range meta.Capabilities {
+		if cap.Type == plugins.CapabilityEmbedding {
+			models = append(models, cap.Models...)
+		}
+	}
+	return models, nil
+}
+
+// GetModels 实现RerankerPlugin的GetModels方法
+// 注意：由于Go不支持方法重载，我们需要为Reranker创建一个包装方法
+// 但接口要求GetModels，所以这里Reranker也会调用同一个方法
+// 实际使用时，RerankerPlugin会通过类型断言调用
+func (p *DashScopePlugin) GetRerankModels(apiKey string) ([]string, error) {
+	meta := p.Metadata()
+	models := []string{}
+	for _, cap := range meta.Capabilities {
+		if cap.Type == plugins.CapabilityRerank {
+			models = append(models, cap.Models...)
+		}
+	}
+	return models, nil
+}
+
 // NewPlugin 插件构造函数（必需导出）
 func NewPlugin() plugins.Plugin {
 	metadata := plugins.PluginMetadata{
@@ -466,6 +495,32 @@ func (p *DashScopePlugin) ChatStream(ctx context.Context, req plugins.ChatReques
 	}
 
 	return nil
+}
+
+// GetModels 获取支持的模型列表（Embedder）
+func (p *DashScopePlugin) GetModels(apiKey string) ([]string, error) {
+	// 如果提供了API Key，可以调用DashScope API获取可用模型
+	// 这里简化实现，直接返回manifest中声明的模型
+	meta := p.Metadata()
+	models := []string{}
+	for _, cap := range meta.Capabilities {
+		if cap.Type == plugins.CapabilityEmbedding {
+			models = append(models, cap.Models...)
+		}
+	}
+	return models, nil
+}
+
+// GetModels 获取支持的模型列表（Reranker）
+func (p *DashScopePlugin) GetRerankModels(apiKey string) ([]string, error) {
+	meta := p.Metadata()
+	models := []string{}
+	for _, cap := range meta.Capabilities {
+		if cap.Type == plugins.CapabilityRerank {
+			models = append(models, cap.Models...)
+		}
+	}
+	return models, nil
 }
 
 // 确保实现所有接口

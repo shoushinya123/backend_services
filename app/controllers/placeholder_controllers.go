@@ -207,21 +207,8 @@ func (c *PaymentController) InitPayment() {}
 func (c *PaymentController) PayCallback() {}
 
 // PluginController 插件控制器（占位符）
-type PluginController struct {
-	BaseController
-}
-
-func NewPluginController(pluginsDir string) *PluginController {
-	return &PluginController{}
-}
-
-func (c *PluginController) Upload() {}
-func (c *PluginController) List() {}
-func (c *PluginController) Get() {}
-func (c *PluginController) Delete() {}
-func (c *PluginController) Toggle() {}
-func (c *PluginController) GetModels() {}
-func (c *PluginController) InstallModel() {}
+// PluginController 已移动到 plugin_controller.go，这里保留空实现以避免编译错误
+// 实际实现请查看 plugin_controller.go
 
 // BookController 图书控制器（占位符）
 type BookController struct {

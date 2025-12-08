@@ -24,3 +24,14 @@ func (p *BaseRerankerPlugin) Rerank(ctx context.Context, query string, documents
 	return nil, fmt.Errorf("Rerank method must be implemented by plugin")
 }
 
+// GetModels 默认实现，返回manifest中声明的模型
+func (p *BaseRerankerPlugin) GetModels(apiKey string) ([]string, error) {
+	meta := p.Metadata()
+	for _, cap := range meta.Capabilities {
+		if cap.Type == plugins.CapabilityRerank {
+			return cap.Models, nil
+		}
+	}
+	return []string{}, nil
+}
+

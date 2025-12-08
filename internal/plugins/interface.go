@@ -144,6 +144,9 @@ type EmbedderPlugin interface {
 
 	// 批量向量化（可选实现）
 	EmbedBatch(ctx context.Context, texts []string) ([][]float32, error)
+
+	// 获取支持的模型列表（需要API Key验证）
+	GetModels(apiKey string) ([]string, error)
 }
 
 // RerankerPlugin 重排序插件接口
@@ -152,6 +155,9 @@ type RerankerPlugin interface {
 
 	// 重排序文档
 	Rerank(ctx context.Context, query string, documents []RerankDocument) ([]RerankResult, error)
+
+	// 获取支持的模型列表（需要API Key验证）
+	GetModels(apiKey string) ([]string, error)
 }
 
 // ChatPlugin 聊天插件接口

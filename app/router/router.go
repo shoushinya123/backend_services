@@ -145,17 +145,14 @@ func Init() {
 	web.Router("/api/pay/:order_id", paymentController, "post:InitPayment")
 	web.Router("/api/pay/callback/:channel", paymentController, "post:PayCallback")
 
-	pluginsDir := os.Getenv("PLUGINS_DIR")
-	if pluginsDir == "" {
-		pluginsDir = "./plugins"
-	}
-	pluginController := controllers.NewPluginController(pluginsDir)
+	// 插件管理路由（使用新的PluginController）
+	pluginController := &controllers.PluginController{}
 	web.Router("/api/plugins/upload", pluginController, "post:Upload")
 	web.Router("/api/plugins", pluginController, "get:List")
-	web.Router("/api/plugins/:plugin_id", pluginController, "get:Get;delete:Delete")
-	web.Router("/api/plugins/:plugin_id/toggle", pluginController, "patch:Toggle")
-	web.Router("/api/plugins/:plugin_id/models", pluginController, "get:GetModels")
-	web.Router("/api/plugins/:plugin_id/models/:plugin_model_id/install", pluginController, "post:InstallModel")
+	web.Router("/api/plugins/:id/models", pluginController, "post:GetModels")
+	web.Router("/api/plugins/:id/enable", pluginController, "post:Enable")
+	web.Router("/api/plugins/:id/disable", pluginController, "post:Disable")
+	web.Router("/api/plugins/:id", pluginController, "delete:Delete")
 
 	// ===== AI阅读相关路由 =====
 
