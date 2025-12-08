@@ -247,7 +247,7 @@ func (e *ElasticsearchIndexer) Search(ctx context.Context, req FulltextSearchReq
 						"query":                req.Query,
 						"operator":             "and",
 						"minimum_should_match": "70%",
-						"boost":               1.0,
+						"boost":                1.0,
 					},
 				},
 			},
