@@ -45,11 +45,18 @@ func NewKnowledgeService() *KnowledgeService {
 		PluginDir:    "./internal/plugin_storage",
 		TempDir:      "./tmp/plugins",
 		AutoDiscover: true,
-		AutoLoad:     true,
+		AutoLoad:     false, // 手动加载，避免启动时阻塞
 	})
 	if err != nil {
 		log.Printf("[knowledge] Failed to initialize plugin manager: %v", err)
 		pluginMgr = nil
+	} else if pluginMgr != nil {
+		// 异步加载插件
+		go func() {
+			if err := pluginMgr.DiscoverAndLoad(); err != nil {
+				log.Printf("[knowledge] Failed to discover plugins: %v", err)
+			}
+		}()
 	}
 	
 	// 优先使用插件系统，降级到原有方式
@@ -130,11 +137,12 @@ func selectEmbeddingProviderWithPlugin(cfg *config.Config, providerSvc *Provider
 			// 尝试按提供商查找插件
 			entries := pluginMgr.ListPlugins()
 			for _, entry := range entries {
-				if entry.Metadata.Provider == providerCode && entry.State == plugins.StateActive {
-					if entry.Metadata.HasCapability(plugins.CapabilityEmbedding) {
-						if modelCode == "" || entry.Metadata.SupportsModel(plugins.CapabilityEmbedding, modelCode) {
-							if embedderPlugin, ok := entry.Plugin.(plugins.EmbedderPlugin); ok {
-								log.Printf("[knowledge] Using plugin embedder: %s", entry.Metadata.ID)
+				meta := entry.Plugin.Metadata()
+				if meta.Provider == providerCode {
+					if meta.HasCapability(plugins.CapabilityEmbedding) {
+						if modelCode == "" || meta.SupportsModel(plugins.CapabilityEmbedding, modelCode) {
+							if embedderPlugin, ok := entry.Plugin.(plugins.EmbedderPlugin); ok && embedderPlugin.Ready() {
+								log.Printf("[knowledge] Using plugin embedder: %s", meta.ID)
 								return plugins.NewEmbedderAdapter(embedderPlugin)
 							}
 						}
@@ -144,7 +152,7 @@ func selectEmbeddingProviderWithPlugin(cfg *config.Config, providerSvc *Provider
 			
 			// 尝试按能力类型查找
 			if embedderPlugin, err := pluginMgr.FindPluginByCapability(plugins.CapabilityEmbedding, modelCode); err == nil {
-				if ep, ok := embedderPlugin.(plugins.EmbedderPlugin); ok {
+				if ep, ok := embedderPlugin.(plugins.EmbedderPlugin); ok && ep.Ready() {
 					log.Printf("[knowledge] Using plugin embedder: %s", embedderPlugin.Metadata().ID)
 					return plugins.NewEmbedderAdapter(ep)
 				}
