@@ -1,15 +1,18 @@
 # 知识库微服务 (Knowledge Service)
 
-基于 RAG (Retrieval-Augmented Generation) 技术的知识库管理系统，支持文档上传、向量化、混合搜索等功能。
+基于 RAG (Retrieval-Augmented Generation) 技术的知识库管理系统，参考 Dify 架构设计，支持文档上传、向量化、混合搜索等功能。
 
 ## 📋 项目概述
 
 知识库微服务是一个独立的微服务，提供完整的知识库管理功能：
 
 - **文档管理**: 支持 PDF、Word、TXT、EPUB 等多种格式
-- **向量化**: 使用 DashScope/OpenAI 进行文本向量化
+- **向量化**: 使用 DashScope/OpenAI 进行文本向量化（支持前端配置 API Key）
 - **混合搜索**: 结合全文检索（Elasticsearch/PostgreSQL）和向量搜索（Milvus）
 - **智能重排**: 使用 DashScope Rerank 优化搜索结果
+- **模型自动发现**: 输入 API Key 后自动发现可用模型（Dify 风格）
+- **实时状态显示**: 文档处理进度和状态实时更新
+- **知识库级配置**: 每个知识库可配置独立的 Embedding 和 Rerank 模型
 
 ## 🏗️ 技术架构
 
@@ -128,19 +131,24 @@ docker-compose -f docker-compose.infra.yml down
 
 ### 知识库管理
 - `GET /api/knowledge` - 获取知识库列表
-- `POST /api/knowledge` - 创建知识库
+- `POST /api/knowledge` - 创建知识库（支持 Dify 风格配置）
 - `GET /api/knowledge/:id` - 获取知识库详情
-- `PUT /api/knowledge/:id` - 更新知识库
+- `PUT /api/knowledge/:id` - 更新知识库（支持 Dify 风格配置）
 - `DELETE /api/knowledge/:id` - 删除知识库
+
+### 模型发现（新增）
+- `POST /api/knowledge/models/discover` - 根据 API Key 发现可用模型
 
 ### 文档管理
 - `POST /api/knowledge/:id/upload` - 上传文档
 - `POST /api/knowledge/:id/upload-batch` - 批量上传文档
 - `POST /api/knowledge/:id/process` - 处理文档（分块、向量化）
+- `GET /api/knowledge/:id/documents` - 获取文档列表（含处理状态）
+- `GET /api/knowledge/:id/documents/:doc_id` - 获取文档详情（含处理进度）
 - `POST /api/knowledge/:id/documents/:doc_id/index` - 生成索引
 
 ### 搜索
-- `GET /api/knowledge/:id/search?q=查询内容&type=vector|fulltext|hybrid` - 搜索知识库
+- `GET /api/knowledge/:id/search?query=查询内容&mode=auto|fulltext|vector|hybrid` - 搜索知识库（智能自适应检索）
 
 ### 同步
 - `POST /api/knowledge/:id/sync/notion` - 同步 Notion 文档
@@ -159,7 +167,9 @@ docker-compose -f docker-compose.infra.yml down
 | 变量名 | 说明 | 默认值 | 必需 |
 |--------|------|--------|------|
 | `SERVER_PORT` | 服务端口 | 8001 | 否 |
-| `DASHSCOPE_API_KEY` | DashScope API 密钥 | - | 是 |
+| `DASHSCOPE_API_KEY` | DashScope API 密钥（全局默认值） | - | 否 |
+| `DASHSCOPE_EMBEDDING_MODEL` | 默认 Embedding 模型 | text-embedding-v4 | 否 |
+| `DASHSCOPE_RERANK_MODEL` | 默认 Rerank 模型 | gte-rerank | 否 |
 | `DATABASE_URL` | PostgreSQL 连接字符串 | - | 是 |
 | `REDIS_HOST` | Redis 主机 | localhost | 否 |
 | `REDIS_PORT` | Redis 端口 | 6379 | 否 |
@@ -169,6 +179,30 @@ docker-compose -f docker-compose.infra.yml down
 | `KAFKA_BROKERS` | Kafka Broker 地址 | localhost:9092 | 否 |
 | `HTTP_PROXY` | HTTP 代理 | - | 否 |
 | `HTTPS_PROXY` | HTTPS 代理 | - | 否 |
+
+### 知识库配置（Dify 风格）
+
+每个知识库可以独立配置 Embedding 和 Rerank 模型，支持前端直接配置 API Key：
+
+**创建/更新知识库时的配置格式**:
+```json
+{
+  "name": "我的知识库",
+  "description": "知识库描述",
+  "config": {
+    "dashscope": {
+      "api_key": "sk-xxx",
+      "embedding_model": "text-embedding-v4",
+      "rerank_model": "gte-rerank"
+    }
+  }
+}
+```
+
+**模型自动发现**:
+- 前端输入 API Key 后，调用 `POST /api/knowledge/models/discover` 自动获取可用模型列表
+- 支持 DashScope 和 OpenAI 提供商
+- 自动验证 API Key 有效性
 
 ### 服务端口
 
@@ -196,10 +230,14 @@ export HTTPS_PROXY="http://host.docker.internal:12334"
 
 ## 🐳 Docker 部署
 
-### 构建镜像
+### 构建镜像（使用本地镜像）
 
 ```bash
-docker build -f Dockerfile.knowledge -t ai-xia-services-knowledge:latest .
+# 使用本地基础镜像构建（推荐，避免网络问题）
+DOCKER_BUILDKIT=0 docker build --pull=false -t ai-xia-services-knowledge:latest -f Dockerfile.knowledge .
+
+# 或使用构建脚本
+./build-local.sh
 ```
 
 ### 运行容器
@@ -217,6 +255,17 @@ docker run -d \
   -e SERVER_PORT=8001 \
   -p 8001:8001 \
   ai-xia-services-knowledge:latest
+```
+
+### 使用 Docker Compose
+
+```bash
+# 启动服务（使用本地构建的镜像）
+export DASHSCOPE_API_KEY="your-api-key"
+docker-compose -f docker-compose.services.yml up -d
+
+# 查看日志
+docker-compose -f docker-compose.services.yml logs -f
 ```
 
 ### 查看日志
@@ -317,21 +366,44 @@ docker network inspect backend_services-main_ai-xia-network
 2. 配置 API 地址（默认：http://localhost:8001）
 3. 使用界面测试各项功能：
    - 健康检查
-   - 创建知识库
+   - 创建知识库（支持模型自动发现）
    - 查询知识库列表
    - 上传文档
-   - 处理文档
+   - 处理文档（实时查看处理进度）
+   - 查看文档处理状态（Embedding、Rerank 配置状态）
    - 搜索知识库
+
+**模型自动发现功能**:
+- 在创建知识库时输入 DashScope API Key
+- 点击"发现模型"按钮或离开输入框自动触发
+- 系统会自动获取可用模型列表并填充下拉框
 
 ### 使用 curl 测试
 
-#### 创建知识库
+#### 发现可用模型
+```bash
+curl -X POST http://localhost:8001/api/knowledge/models/discover \
+  -H "Content-Type: application/json" \
+  -d '{
+    "provider": "dashscope",
+    "api_key": "sk-xxx"
+  }'
+```
+
+#### 创建知识库（带 DashScope 配置）
 ```bash
 curl -X POST http://localhost:8001/api/knowledge \
   -H "Content-Type: application/json" \
   -d '{
     "name": "测试知识库",
-    "description": "这是一个测试知识库"
+    "description": "这是一个测试知识库",
+    "config": {
+      "dashscope": {
+        "api_key": "sk-xxx",
+        "embedding_model": "text-embedding-v4",
+        "rerank_model": "gte-rerank"
+      }
+    }
   }'
 ```
 
@@ -340,9 +412,14 @@ curl -X POST http://localhost:8001/api/knowledge \
 curl http://localhost:8001/api/knowledge
 ```
 
+#### 查询文档列表（含处理状态）
+```bash
+curl http://localhost:8001/api/knowledge/1/documents
+```
+
 #### 搜索
 ```bash
-curl "http://localhost:8001/api/knowledge/1/search?q=测试&type=hybrid"
+curl "http://localhost:8001/api/knowledge/1/search?query=测试&mode=hybrid&topK=10"
 ```
 
 ## 📝 开发说明
@@ -363,6 +440,17 @@ go build -tags=knowledge -o knowledge-service ./cmd/knowledge/main.go
 
 ## 🔄 更新日志
 
+### v1.1.0 (2025-12-09)
+- ✨ 实现 Dify 风格的知识库配置（前端配置 API Key 和模型）
+- ✨ 添加模型自动发现功能（根据 API Key 获取可用模型列表）
+- ✨ 改进文档处理流程，支持实时进度更新
+- ✨ 优化状态显示（Embedding、Rerank 状态正确显示）
+- ✨ 搜索时使用知识库特定的 Embedder 和 Reranker
+- 🐛 修复文档处理进度显示问题
+- 🐛 修复 Embedding 和 Rerank 状态显示问题
+- 📝 添加模型发现 API 端点
+- 📝 更新前端测试页面，支持模型自动发现和选择
+
 ### v1.0.0 (2025-12-05)
 - ✅ 完成 Qdrant 到 Milvus 的迁移
 - ✅ 实现完整的知识库管理功能
@@ -378,6 +466,35 @@ MIT License
 
 欢迎提交 Issue 和 Pull Request！
 
+## 🆕 新特性说明
+
+### Dify 风格的知识库配置
+
+系统现在支持类似 Dify 的知识库配置方式：
+
+1. **前端配置 API Key**: 在创建知识库时可直接输入 API Key
+2. **模型自动发现**: 输入 API Key 后自动获取可用模型列表
+3. **知识库级配置**: 每个知识库可以配置独立的 Embedding 和 Rerank 模型
+4. **实时状态显示**: 文档处理进度和处理状态实时更新
+
+### 文档处理流程
+
+1. **上传文档** → 创建文档记录（状态：`uploading`）
+2. **文件存储** → 上传到 MinIO（状态：`processing`）
+3. **文档解析** → 解析文件内容
+4. **文档分块** → 使用 Chunker 分块
+5. **向量化** → 使用知识库配置的 Embedding 模型向量化每个块
+6. **存储向量** → 保存到向量库
+7. **全文索引** → 建立全文索引
+8. **完成** → 状态更新为 `completed`，进度 100%
+
+### 模型发现功能
+
+- **API 端点**: `POST /api/knowledge/models/discover`
+- **支持的提供商**: DashScope、OpenAI
+- **功能**: 验证 API Key 并返回可用模型列表
+- **前端集成**: 自动调用并在界面中显示可用模型
+
 ---
 
-**最后更新**: 2025-12-05
+**最后更新**: 2025-12-09

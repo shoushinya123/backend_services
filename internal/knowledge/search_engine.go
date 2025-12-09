@@ -13,8 +13,8 @@ type HybridSearchRequest struct {
 	KnowledgeBaseID uint
 	Query           string
 	Limit           int
-	SearchType      string // fulltext | vector | hybrid (兼容旧接口)
-	Mode            string // auto | fulltext | vector | hybrid (新接口)
+	SearchType      string  // fulltext | vector | hybrid (兼容旧接口)
+	Mode            string  // auto | fulltext | vector | hybrid (新接口)
 	VectorThreshold float64 // 向量检索相似度阈值，默认0.9
 }
 
@@ -40,32 +40,52 @@ func (e *HybridSearchEngine) HasReranker() bool {
 	return e.reranker != nil && e.reranker.Ready()
 }
 
+// GetReranker 获取当前的 Reranker
+func (e *HybridSearchEngine) GetReranker() Reranker {
+	return e.reranker
+}
+
+// SetReranker 设置 Reranker（用于动态切换）
+func (e *HybridSearchEngine) SetReranker(reranker Reranker) {
+	e.reranker = reranker
+}
+
+// GetEmbedder 获取当前的 Embedder
+func (e *HybridSearchEngine) GetEmbedder() Embedder {
+	return e.embedder
+}
+
+// SetEmbedder 设置 Embedder（用于动态切换，确保搜索时使用与文档处理时相同的embedder）
+func (e *HybridSearchEngine) SetEmbedder(embedder Embedder) {
+	e.embedder = embedder
+}
+
 // detectQueryType 检测查询类型
 func (e *HybridSearchEngine) detectQueryType(query string) string {
 	query = strings.TrimSpace(query)
 	queryLen := len([]rune(query))
-	
+
 	// 检测是否包含数字或固定术语（如"合同条款12条"）
 	hasNumber, _ := regexp.MatchString(`\d+`, query)
-	hasFixedTerm := strings.Contains(query, "条") || strings.Contains(query, "款") || 
+	hasFixedTerm := strings.Contains(query, "条") || strings.Contains(query, "款") ||
 		strings.Contains(query, "项") || strings.Contains(query, "章")
-	
+
 	// 短查询（≤5字）+ 关键词型
 	if queryLen <= 5 && (hasNumber || hasFixedTerm) {
 		return "keyword_short"
 	}
-	
+
 	// 长查询（>5字）+ 自然语言型
 	if queryLen > 5 {
 		return "natural_long"
 	}
-	
+
 	// 模糊/口语化查询（如"类似这个条款的内容"）
-	if strings.Contains(query, "类似") || strings.Contains(query, "这样") || 
+	if strings.Contains(query, "类似") || strings.Contains(query, "这样") ||
 		strings.Contains(query, "这种") || strings.Contains(query, "相关") {
 		return "fuzzy"
 	}
-	
+
 	// 默认：短查询
 	return "keyword_short"
 }
@@ -209,7 +229,7 @@ func (e *HybridSearchEngine) Search(ctx context.Context, req HybridSearchRequest
 // searchAutoKeywordShort 自动适配：短查询+关键词型
 func (e *HybridSearchEngine) searchAutoKeywordShort(ctx context.Context, req HybridSearchRequest, useVector, useFulltext bool) ([]SearchMatch, error) {
 	var allResults []SearchMatch
-	
+
 	// 1. 优先全文精准匹配
 	if useFulltext {
 		fullResults, err := e.indexer.Search(ctx, FulltextSearchRequest{
@@ -221,7 +241,7 @@ func (e *HybridSearchEngine) searchAutoKeywordShort(ctx context.Context, req Hyb
 			allResults = append(allResults, fullResults...)
 		}
 	}
-	
+
 	// 2. 如果结果不足，补充向量检索
 	if len(allResults) < req.Limit && useVector {
 		embedding, err := e.embedder.Embed(ctx, req.Query)
@@ -247,20 +267,20 @@ func (e *HybridSearchEngine) searchAutoKeywordShort(ctx context.Context, req Hyb
 			}
 		}
 	}
-	
+
 	// 排序并限制数量
 	sortMatchesByScore(allResults)
 	if len(allResults) > req.Limit {
 		allResults = allResults[:req.Limit]
 	}
-	
+
 	return allResults, nil
 }
 
 // searchAutoNaturalLong 自动适配：长查询+自然语言型
 func (e *HybridSearchEngine) searchAutoNaturalLong(ctx context.Context, req HybridSearchRequest, useVector, useFulltext bool) ([]SearchMatch, error) {
 	var allResults []SearchMatch
-	
+
 	// 1. 优先向量检索（0.9-1，按降序排序）
 	if useVector {
 		embedding, err := e.embedder.Embed(ctx, req.Query)
@@ -309,7 +329,7 @@ func (e *HybridSearchEngine) searchAutoNaturalLong(ctx context.Context, req Hybr
 			}
 		}
 	}
-	
+
 	// 3. 如果结果不足，补充全文精准结果
 	if len(allResults) < req.Limit && useFulltext {
 		fullResults, err := e.indexer.Search(ctx, FulltextSearchRequest{
@@ -330,13 +350,13 @@ func (e *HybridSearchEngine) searchAutoNaturalLong(ctx context.Context, req Hybr
 			}
 		}
 	}
-	
+
 	// 排序并限制数量
 	sortMatchesByScore(allResults)
 	if len(allResults) > req.Limit {
 		allResults = allResults[:req.Limit]
 	}
-	
+
 	return allResults, nil
 }
 
@@ -349,17 +369,17 @@ func (e *HybridSearchEngine) mergeResults(ctx context.Context, req HybridSearchR
 			maxFullScore = r.Score
 		}
 	}
-	
+
 	// 融合得分：全文×0.6 + 向量×0.4
 	scoreMap := make(map[uint]*SearchMatch)
-	
+
 	// 处理向量结果
 	for _, item := range vectorResults {
 		chunk := item
 		chunk.Score = chunk.Score * 0.4 // 向量权重0.4
 		scoreMap[chunk.ChunkID] = &chunk
 	}
-	
+
 	// 处理全文结果
 	for _, item := range fullResults {
 		normalizedScore := e.normalizeScore(item.Score, maxFullScore)
@@ -378,24 +398,24 @@ func (e *HybridSearchEngine) mergeResults(ctx context.Context, req HybridSearchR
 			scoreMap[item.ChunkID] = &chunk
 		}
 	}
-	
+
 	// 转换为结果列表
 	results := make([]SearchMatch, 0, len(scoreMap))
 	for _, item := range scoreMap {
 		results = append(results, *item)
 	}
-	
+
 	// 按综合得分降序排序
 	sortMatchesByScore(results)
-	
+
 	// 应用rerank（如果配置了）
 	results = e.applyRerank(ctx, req.Query, results, req.Limit)
-	
+
 	// 最终截取TopK
 	if len(results) > req.Limit {
 		results = results[:req.Limit]
 	}
-	
+
 	return results, nil
 }
 
@@ -404,7 +424,7 @@ func (e *HybridSearchEngine) applyRerank(ctx context.Context, query string, resu
 	if e.reranker == nil || !e.reranker.Ready() || len(results) == 0 {
 		return results
 	}
-	
+
 	// 准备rerank候选（取Top 50或更多，但不超过实际结果数）
 	rerankTopN := limit * 5 // 对Top 50进行rerank（假设limit=10）
 	if rerankTopN > len(results) {
@@ -417,9 +437,9 @@ func (e *HybridSearchEngine) applyRerank(ctx context.Context, query string, resu
 		// 结果太少，不需要rerank
 		return results
 	}
-	
+
 	candidates := results[:rerankTopN]
-	
+
 	// 转换为RerankDocument
 	rerankDocs := make([]RerankDocument, len(candidates))
 	for i, match := range candidates {
@@ -429,24 +449,24 @@ func (e *HybridSearchEngine) applyRerank(ctx context.Context, query string, resu
 			Score:   match.Score,
 		}
 	}
-	
+
 	// 调用rerank
 	rerankResults, err := e.reranker.Rerank(ctx, query, rerankDocs)
 	if err != nil {
 		// Rerank失败，返回原结果
 		return results
 	}
-	
+
 	if len(rerankResults) == 0 {
 		return results
 	}
-	
+
 	// 构建ID到结果的映射
 	idMap := make(map[uint]*SearchMatch)
 	for i := range candidates {
 		idMap[candidates[i].ChunkID] = &candidates[i]
 	}
-	
+
 	// 使用rerank结果更新分数和顺序
 	reranked := make([]SearchMatch, 0, len(rerankResults))
 	for _, rr := range rerankResults {
@@ -455,7 +475,7 @@ func (e *HybridSearchEngine) applyRerank(ctx context.Context, query string, resu
 			reranked = append(reranked, *match)
 		}
 	}
-	
+
 	// 将rerank后的结果放在前面，未rerank的结果放在后面
 	remaining := results[rerankTopN:]
 	return append(reranked, remaining...)

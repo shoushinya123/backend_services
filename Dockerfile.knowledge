@@ -1,5 +1,6 @@
 # 知识库微服务 Dockerfile
 # 使用本地已有的golang:1.25-alpine，允许自动下载更新的Go工具链
+# 注意：如果本地已有镜像，Docker会自动使用本地镜像
 FROM golang:1.25-alpine AS builder
 
 # 设置代理（构建时）
@@ -46,10 +47,21 @@ COPY . .
 # 更新 go.mod（修复依赖）
 RUN go mod tidy || true
 
+# 安装CGO依赖（用于编译插件）
+RUN apk add --no-cache gcc musl-dev
+
 # 构建知识库服务（使用 knowledge 构建标签）
 RUN CGO_ENABLED=0 GOOS=linux go build -tags=knowledge -a -installsuffix cgo -o knowledge-service ./cmd/knowledge/main.go
 
+# 编译插件（在构建时编译，确保平台兼容）
+# 注意：需要在主项目根目录编译，因为插件需要访问internal包
+RUN if [ -d "examples/plugins/dashscope" ]; then \
+        CGO_ENABLED=1 go build -buildmode=plugin -o examples/plugins/dashscope/plugin.so ./examples/plugins/dashscope/plugin.go && \
+        echo "✅ Plugin compiled successfully" || echo "⚠️ Plugin build skipped"; \
+    fi
+
 # 运行阶段（使用golang镜像中的alpine，避免网络问题）
+# 注意：如果本地已有镜像，Docker会自动使用本地镜像
 FROM golang:1.25-alpine
 
 # 设置代理（运行时，如果需要）
@@ -65,6 +77,11 @@ WORKDIR /root/
 
 # 从构建阶段复制二进制文件
 COPY --from=builder /app/knowledge-service .
+
+# 从构建阶段复制编译好的插件（如果存在）
+# 注意：插件编译可能失败，如果文件不存在构建会失败
+# 暂时注释掉，插件可以通过其他方式提供
+# COPY --from=builder /app/examples/plugins/dashscope/plugin.so /tmp/dashscope-plugin.so
 
 # 暴露端口
 EXPOSE 8001

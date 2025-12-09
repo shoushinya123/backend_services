@@ -12,12 +12,16 @@ import (
 
 type KnowledgeController struct {
 	BaseController
-	knowledgeService *services.KnowledgeService
+	knowledgeService    *services.KnowledgeService
+	modelDiscoveryService *services.ModelDiscoveryService
 }
 
 func (c *KnowledgeController) Prepare() {
 	if c.knowledgeService == nil {
 		c.knowledgeService = services.NewKnowledgeService()
+	}
+	if c.modelDiscoveryService == nil {
+		c.modelDiscoveryService = services.NewModelDiscoveryService()
 	}
 }
 
@@ -83,8 +87,36 @@ func (c *KnowledgeController) Create() {
 		c.JSONError(http.StatusBadRequest, fmt.Sprintf("请求格式错误: %v", err))
 		return
 	}
+	
+	// 处理DashScope配置（前端可以在Config中的dashscope字段配置）
+	// Config结构示例：
+	// {
+	//   "dashscope": {
+	//     "api_key": "sk-xxx",
+	//     "embedding_model": "text-embedding-v4",
+	//     "rerank_model": "gte-rerank"
+	//   }
+	// }
+	if req.Config == nil {
+		req.Config = make(map[string]interface{})
+	}
+	
+	// 向后兼容：如果直接传递embedding_model或rerank_model字段，保存到Config中
+	var rawReq map[string]interface{}
+	if err := json.Unmarshal(body, &rawReq); err == nil {
+		if req.EmbeddingModel == "" {
+			if embeddingModel, ok := rawReq["embedding_model"].(string); ok && embeddingModel != "" {
+				req.EmbeddingModel = embeddingModel
+			}
+		}
+		if req.RerankModel == "" {
+			if rerankModel, ok := rawReq["rerank_model"].(string); ok && rerankModel != "" {
+				req.RerankModel = rerankModel
+			}
+		}
+	}
 
-	log.Printf("[knowledge] Create request - Name: %s, Description: %s", req.Name, req.Description)
+	log.Printf("[knowledge] Create request - Name: %s, Description: %s, Config: %+v", req.Name, req.Description, req.Config)
 
 	kb, err := c.knowledgeService.CreateKnowledgeBase(userID, req)
 	if err != nil {
@@ -113,6 +145,34 @@ func (c *KnowledgeController) Update() {
 	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &req); err != nil {
 		c.JSONError(http.StatusBadRequest, "请求格式错误")
 		return
+	}
+	
+	// 处理DashScope配置（前端可以在Config中的dashscope字段配置）
+	// Config结构示例：
+	// {
+	//   "dashscope": {
+	//     "api_key": "sk-xxx",
+	//     "embedding_model": "text-embedding-v4",
+	//     "rerank_model": "gte-rerank"
+	//   }
+	// }
+	if req.Config == nil {
+		req.Config = make(map[string]interface{})
+	}
+	
+	// 向后兼容：如果直接传递embedding_model或rerank_model字段，保存到Config中
+	var rawReq map[string]interface{}
+	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &rawReq); err == nil {
+		if req.EmbeddingModel == "" {
+			if embeddingModel, ok := rawReq["embedding_model"].(string); ok && embeddingModel != "" {
+				req.EmbeddingModel = embeddingModel
+			}
+		}
+		if req.RerankModel == "" {
+			if rerankModel, ok := rawReq["rerank_model"].(string); ok && rerankModel != "" {
+				req.RerankModel = rerankModel
+			}
+		}
 	}
 
 	kb, err := c.knowledgeService.UpdateKnowledgeBase(uint(kbID), userID, req)
@@ -521,4 +581,42 @@ func (c *KnowledgeController) mustParseUintParam(name string) (uint64, bool) {
 		return 0, false
 	}
 	return id, true
+}
+
+// POST /api/knowledge/models/discover - 发现可用模型（根据API Key和提供商）
+func (c *KnowledgeController) DiscoverModels() {
+	log.Printf("[knowledge] DiscoverModels called - Method: %s, Path: %s", c.Ctx.Request.Method, c.Ctx.Request.URL.Path)
+	
+	var req struct {
+		Provider string `json:"provider"` // dashscope, openai等
+		APIKey   string `json:"api_key"`
+	}
+
+	body := c.Ctx.Input.RequestBody
+	log.Printf("[knowledge] DiscoverModels request body: %s", string(body))
+	
+	if err := json.Unmarshal(body, &req); err != nil {
+		log.Printf("[knowledge] DiscoverModels parse error: %v", err)
+		c.JSONError(http.StatusBadRequest, "请求格式错误")
+		return
+	}
+
+	if req.Provider == "" {
+		req.Provider = "dashscope" // 默认DashScope
+	}
+
+	if req.APIKey == "" {
+		c.JSONError(http.StatusBadRequest, "API Key不能为空")
+		return
+	}
+
+	ctx := c.Ctx.Request.Context()
+	models, err := c.modelDiscoveryService.DiscoverModels(ctx, req.Provider, req.APIKey)
+	if err != nil {
+		log.Printf("[knowledge] DiscoverModels error: %v", err)
+		c.JSONError(http.StatusBadRequest, err.Error())
+		return
+	}
+
+	c.JSONSuccess(models)
 }

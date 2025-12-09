@@ -1,0 +1,54 @@
+# 插件服务 Dockerfile
+FROM golang:1.25-alpine AS builder
+
+WORKDIR /app
+
+# 设置构建时代理（如果提供）
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG http_proxy
+ARG https_proxy
+
+ENV HTTP_PROXY=${HTTP_PROXY}
+ENV HTTPS_PROXY=${HTTPS_PROXY}
+ENV http_proxy=${http_proxy}
+ENV https_proxy=${https_proxy}
+
+# 安装必要的工具（包括CGO编译依赖和链接器）
+RUN apk add --no-cache git make gcc musl-dev binutils binutils-gold
+
+# 复制go mod文件
+COPY go.mod go.sum ./
+RUN go mod download
+
+# 复制源代码
+COPY . .
+
+# 构建插件服务（使用build tag，排除有问题的服务代码）
+# 临时移除有问题的文件和目录，并修改router.go
+RUN rm -rf internal/services && \
+    rm -f app/controllers/knowledge_controller.go && \
+    rm -f app/router/router.go && \
+    mv app/router/router_plugin.go app/router/router.go && \
+    CGO_ENABLED=1 GOOS=linux go build -tags plugin -o /app/plugin-service ./cmd/plugin
+
+# 运行阶段
+FROM alpine:latest
+
+WORKDIR /app
+
+# 安装必要的运行时依赖
+RUN apk add --no-cache ca-certificates libc6-compat
+
+# 从构建阶段复制二进制文件
+COPY --from=builder /app/plugin-service /app/plugin-service
+
+# 创建必要的目录
+RUN mkdir -p /app/tmp/plugins /app/tmp/plugins/extract /app/tmp/plugins/upload
+
+# 暴露端口
+EXPOSE 8002
+
+# 运行服务
+CMD ["/app/plugin-service"]
+

@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  # Jenkins CI/CD 服务
+  jenkins:
+    image: jenkins/jenkins:lts
+    container_name: ci-cd-jenkins
+    user: root
+    ports:
+      - "8081:8080"  # Jenkins Web UI (使用 8081 端口避免冲突)
+      - "50000:50000"  # Jenkins Agent port
+    volumes:
+      # Jenkins 数据持久化
+      - jenkins_data:/var/jenkins_home
+      # 挂载 Docker socket，允许 Jenkins 使用宿主机的 Docker
+      - /var/run/docker.sock:/var/run/docker.sock
+      # 挂载本地仓库（用于直接访问代码）
+      - ${PWD}:/workspace:rw
+      # 挂载启动脚本
+      - ./docker-entrypoint.sh:/docker-entrypoint.sh:ro
+    environment:
+      - JAVA_OPTS=-Djenkins.install.runSetupWizard=false
+      - JENKINS_OPTS=--httpPort=8080
+      # 代理配置（如果需要）
+      - HTTP_PROXY=${HTTP_PROXY:-}
+      - HTTPS_PROXY=${HTTPS_PROXY:-}
+      - http_proxy=${http_proxy:-}
+      - https_proxy=${https_proxy:-}
+      - NO_PROXY=localhost,127.0.0.1,jenkins
+      - no_proxy=localhost,127.0.0.1,jenkins
+    networks:
+      - ai-xia-network
+    restart: unless-stopped
+    # 使用自定义启动脚本
+    entrypoint: ["/bin/bash", "/docker-entrypoint.sh"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/login"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+volumes:
+  jenkins_data:
+    driver: local
+
+networks:
+  ai-xia-network:
+    external: true
+    name: backend_services-main_ai-xia-network
+

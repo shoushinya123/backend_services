@@ -1,14 +1,14 @@
 package router
 
 import (
-	"os"
-
 	"github.com/aihub/backend-go/app/controllers"
 	// "github.com/aihub/backend-go/app/middleware" // CORS 已移到 Envoy Gateway
 	"github.com/beego/beego/v2/server/web"
 )
 
 // InitKnowledgeRoutes 初始化知识库相关路由（微服务模式）
+// +build !plugin
+
 func InitKnowledgeRoutes() {
 	web.Router("/", &controllers.RootController{}, "get:Index")
 	web.Router("/health", &controllers.HealthController{}, "get:Health")
@@ -19,6 +19,8 @@ func InitKnowledgeRoutes() {
 	// 知识库路由
 	knowledgeController := &controllers.KnowledgeController{}
 	web.Router("/api/knowledge", knowledgeController, "get:List;post:Create")
+	// 注意：具体路由必须在参数路由之前，否则/models会被:id匹配
+	web.Router("/api/knowledge/models/discover", knowledgeController, "post:DiscoverModels")
 	web.Router("/api/knowledge/:id", knowledgeController, "get:Get;put:Update;delete:Delete")
 	web.Router("/api/knowledge/:id/upload", knowledgeController, "post:UploadDocuments")
 	web.Router("/api/knowledge/:id/upload-batch", knowledgeController, "post:UploadBatch")
@@ -36,6 +38,7 @@ func InitKnowledgeRoutes() {
 	web.Router("/api/middleware/redis", middlewareController, "get:GetRedis")
 	web.Router("/api/cache/clear", middlewareController, "post:ClearCache")
 }
+
 
 // Init registers all routes. Must be called after config is loaded.
 func Init() {
@@ -145,14 +148,6 @@ func Init() {
 	web.Router("/api/pay/:order_id", paymentController, "post:InitPayment")
 	web.Router("/api/pay/callback/:channel", paymentController, "post:PayCallback")
 
-	// 插件管理路由（使用新的PluginController）
-	pluginController := &controllers.PluginController{}
-	web.Router("/api/plugins/upload", pluginController, "post:Upload")
-	web.Router("/api/plugins", pluginController, "get:List")
-	web.Router("/api/plugins/:id/models", pluginController, "post:GetModels")
-	web.Router("/api/plugins/:id/enable", pluginController, "post:Enable")
-	web.Router("/api/plugins/:id/disable", pluginController, "post:Disable")
-	web.Router("/api/plugins/:id", pluginController, "delete:Delete")
 
 	// ===== AI阅读相关路由 =====
 

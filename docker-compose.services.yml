@@ -1,9 +1,11 @@
 services:
   # 知识库微服务
   ai-xia-services-knowledge:
+    image: ai-xia-services-knowledge:latest
     build:
       context: .
       dockerfile: Dockerfile.knowledge
+      pull: false  # 使用本地镜像，不拉取最新版本
     container_name: ai-xia-services-knowledge
     environment:
       # 连接到基础设施服务（使用服务名）

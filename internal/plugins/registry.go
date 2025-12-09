@@ -28,6 +28,7 @@ type PluginEntry struct {
 	Error       string      `json:"error,omitempty"`
 	LoadedAt    int64       `json:"loaded_at"`
 	LastUsedAt  int64       `json:"last_used_at"`
+	ExtractDir  string      `json:"-"` // 解压目录路径，用于生命周期管理
 }
 
 // PluginRegistry 插件注册表

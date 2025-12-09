@@ -87,8 +87,8 @@ func (m *PluginManager) LoadPlugin(xpkgPath string) error {
 		m.registry.UpdateState(pluginID, StateLoading, nil)
 	}
 
-	// 加载插件
-	plugin, err := m.loader.LoadPlugin(xpkgPath)
+	// 加载插件（返回插件实例和解压目录）
+	plugin, extractDir, err := m.loader.LoadPlugin(xpkgPath)
 	if err != nil {
 		if entry != nil {
 			m.registry.UpdateState(pluginID, StateError, err)
@@ -99,9 +99,16 @@ func (m *PluginManager) LoadPlugin(xpkgPath string) error {
 	// 注册插件
 	if entry == nil {
 		if err := m.registry.Register(plugin); err != nil {
+			// 注册失败，清理解压目录
+			os.RemoveAll(extractDir)
 			return fmt.Errorf("failed to register plugin: %w", err)
 		}
 		entry, _ = m.registry.Get(pluginID)
+		// 保存解压目录路径
+		entry.ExtractDir = extractDir
+	} else {
+		// 如果已存在条目，更新解压目录路径
+		entry.ExtractDir = extractDir
 	}
 
 	// 更新状态
@@ -111,6 +118,10 @@ func (m *PluginManager) LoadPlugin(xpkgPath string) error {
 	config := entry.Config
 	if err := plugin.Initialize(config); err != nil {
 		m.registry.UpdateState(pluginID, StateError, err)
+		// 初始化失败，清理解压目录
+		if extractDir != "" {
+			os.RemoveAll(extractDir)
+		}
 		return fmt.Errorf("failed to initialize plugin: %w", err)
 	}
 
@@ -146,9 +157,21 @@ func (m *PluginManager) UnloadPlugin(pluginID string) error {
 		log.Printf("[plugin] Failed to cleanup plugin %s: %v", pluginID, err)
 	}
 
+	// 保存解压目录路径（在Unregister之前）
+	extractDir := entry.ExtractDir
+
 	// 从注册表移除
 	if err := m.registry.Unregister(pluginID); err != nil {
 		return err
+	}
+
+	// 清理解压目录（插件.so文件不再需要）
+	if extractDir != "" {
+		if err := os.RemoveAll(extractDir); err != nil {
+			log.Printf("[plugin] Failed to remove extract dir %s: %v", extractDir, err)
+		} else {
+			log.Printf("[plugin] Cleaned up extract dir: %s", extractDir)
+		}
 	}
 
 	log.Printf("[plugin] Plugin %s unloaded", pluginID)

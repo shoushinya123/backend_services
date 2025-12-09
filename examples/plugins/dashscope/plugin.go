@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/aihub/backend-go/internal/plugins"
@@ -40,29 +39,62 @@ type DashScopePlugin struct {
 func (p *DashScopePlugin) GetModels(apiKey string) ([]string, error) {
 	// 如果提供了API Key，可以调用DashScope API获取可用模型
 	// 这里简化实现，直接返回manifest中声明的模型
-	meta := p.Metadata()
-	models := []string{}
-	for _, cap := range meta.Capabilities {
-		if cap.Type == plugins.CapabilityEmbedding {
-			models = append(models, cap.Models...)
-		}
-	}
-	return models, nil
+	return p.BaseEmbedderPlugin.GetModels(apiKey)
 }
 
-// GetModels 实现RerankerPlugin的GetModels方法
-// 注意：由于Go不支持方法重载，我们需要为Reranker创建一个包装方法
-// 但接口要求GetModels，所以这里Reranker也会调用同一个方法
-// 实际使用时，RerankerPlugin会通过类型断言调用
+// GetRerankModels 实现RerankerPlugin的GetModels方法（通过类型断言调用）
 func (p *DashScopePlugin) GetRerankModels(apiKey string) ([]string, error) {
-	meta := p.Metadata()
-	models := []string{}
-	for _, cap := range meta.Capabilities {
-		if cap.Type == plugins.CapabilityRerank {
-			models = append(models, cap.Models...)
-		}
+	return p.BaseRerankerPlugin.GetModels(apiKey)
+}
+
+// Metadata 实现Plugin接口（明确指定使用BaseEmbedderPlugin的Metadata）
+func (p *DashScopePlugin) Metadata() plugins.PluginMetadata {
+	return p.BaseEmbedderPlugin.Metadata()
+}
+
+// Ready 实现Plugin接口
+func (p *DashScopePlugin) Ready() bool {
+	return p.BaseEmbedderPlugin.Ready()
+}
+
+// Enable 实现Plugin接口
+func (p *DashScopePlugin) Enable() error {
+	return p.BaseEmbedderPlugin.Enable()
+}
+
+// Disable 实现Plugin接口
+func (p *DashScopePlugin) Disable() error {
+	return p.BaseEmbedderPlugin.Disable()
+}
+
+// ReloadConfig 实现Plugin接口
+func (p *DashScopePlugin) ReloadConfig(config plugins.PluginConfig) error {
+	return p.BaseEmbedderPlugin.ReloadConfig(config)
+}
+
+// ValidateConfig 实现Plugin接口
+func (p *DashScopePlugin) ValidateConfig(config plugins.PluginConfig) error {
+	return p.BaseEmbedderPlugin.ValidateConfig(config)
+}
+
+// Cleanup 实现Plugin接口
+func (p *DashScopePlugin) Cleanup() error {
+	// 清理所有基类
+	if err := p.BaseEmbedderPlugin.Cleanup(); err != nil {
+		return err
 	}
-	return models, nil
+	if err := p.BaseRerankerPlugin.Cleanup(); err != nil {
+		return err
+	}
+	if err := p.BaseChatPlugin.Cleanup(); err != nil {
+		return err
+	}
+	return nil
+}
+
+// Dimensions 实现EmbedderPlugin接口
+func (p *DashScopePlugin) Dimensions() int {
+	return p.BaseEmbedderPlugin.Dimensions()
 }
 
 // NewPlugin 插件构造函数（必需导出）
@@ -129,9 +161,15 @@ func NewPlugin() plugins.Plugin {
 		},
 	}
 
+	// 创建基类（它们会各自创建BasePlugin，但我们需要共享）
 	baseEmbedder := sdk.NewBaseEmbedderPlugin(metadata, 1536)
 	baseReranker := sdk.NewBaseRerankerPlugin(metadata)
 	baseChat := sdk.NewBaseChatPlugin(metadata)
+	
+	// 共享BasePlugin（使用BaseEmbedderPlugin的BasePlugin）
+	sharedBasePlugin := baseEmbedder.BasePlugin
+	baseReranker.BasePlugin = sharedBasePlugin
+	baseChat.BasePlugin = sharedBasePlugin
 
 	return &DashScopePlugin{
 		BaseEmbedderPlugin: baseEmbedder,
@@ -142,23 +180,23 @@ func NewPlugin() plugins.Plugin {
 
 // Initialize 初始化插件
 func (p *DashScopePlugin) Initialize(config plugins.PluginConfig) error {
-	// 调用基类初始化
-	if err := p.BasePlugin.Initialize(config); err != nil {
+	// 调用基类初始化（使用BaseEmbedderPlugin的基类，因为所有基类共享同一个BasePlugin）
+	if err := p.BaseEmbedderPlugin.BasePlugin.Initialize(config); err != nil {
 		return err
 	}
 
-	// 读取配置
-	p.apiKey = p.GetSettingString("api_key", "")
+	// 读取配置（使用BaseEmbedderPlugin的BasePlugin方法）
+	p.apiKey = p.BaseEmbedderPlugin.GetSettingString("api_key", "")
 	if p.apiKey == "" {
 		return fmt.Errorf("api_key is required")
 	}
 
-	p.baseURL = p.GetSettingString("base_url", "https://dashscope.aliyuncs.com/compatible-mode/v1")
-	p.embeddingModel = p.GetSettingString("embedding_model", "text-embedding-v4")
-	p.rerankModel = p.GetSettingString("rerank_model", "gte-rerank")
-	p.chatModel = p.GetSettingString("chat_model", "qwen-turbo")
+	p.baseURL = p.BaseEmbedderPlugin.GetSettingString("base_url", "https://dashscope.aliyuncs.com/compatible-mode/v1")
+	p.embeddingModel = p.BaseEmbedderPlugin.GetSettingString("embedding_model", "text-embedding-v4")
+	p.rerankModel = p.BaseEmbedderPlugin.GetSettingString("rerank_model", "gte-rerank")
+	p.chatModel = p.BaseEmbedderPlugin.GetSettingString("chat_model", "qwen-turbo")
 
-	timeout := p.GetSettingInt("timeout", 30)
+	timeout := p.BaseEmbedderPlugin.GetSettingInt("timeout", 30)
 	if timeout <= 0 {
 		timeout = 30
 	}
@@ -497,31 +535,6 @@ func (p *DashScopePlugin) ChatStream(ctx context.Context, req plugins.ChatReques
 	return nil
 }
 
-// GetModels 获取支持的模型列表（Embedder）
-func (p *DashScopePlugin) GetModels(apiKey string) ([]string, error) {
-	// 如果提供了API Key，可以调用DashScope API获取可用模型
-	// 这里简化实现，直接返回manifest中声明的模型
-	meta := p.Metadata()
-	models := []string{}
-	for _, cap := range meta.Capabilities {
-		if cap.Type == plugins.CapabilityEmbedding {
-			models = append(models, cap.Models...)
-		}
-	}
-	return models, nil
-}
-
-// GetModels 获取支持的模型列表（Reranker）
-func (p *DashScopePlugin) GetRerankModels(apiKey string) ([]string, error) {
-	meta := p.Metadata()
-	models := []string{}
-	for _, cap := range meta.Capabilities {
-		if cap.Type == plugins.CapabilityRerank {
-			models = append(models, cap.Models...)
-		}
-	}
-	return models, nil
-}
 
 // 确保实现所有接口
 var (

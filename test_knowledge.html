@@ -417,6 +417,7 @@
                 <div id="knowledgeListResult"></div>
             </div>
 
+
             <!-- 创建知识库 -->
             <div class="section">
                 <h2>➕ 创建知识库</h2>
@@ -428,6 +429,42 @@
                     <label for="kbDescription">描述:</label>
                     <textarea id="kbDescription" placeholder="输入知识库描述"></textarea>
                 </div>
+                
+                <!-- DashScope配置 -->
+                <div style="margin: 20px 0; padding: 15px; background: #e7f3ff; border-radius: 6px; border-left: 4px solid #667eea;">
+                    <h3 style="margin: 0 0 15px 0; color: #667eea; font-size: 16px;">🔑 DashScope 配置（可选）</h3>
+                    <p style="font-size: 12px; color: #6c757d; margin-bottom: 15px;">
+                        配置DashScope API Key和模型。输入API Key后会自动发现可用模型。如果不配置，将使用环境变量中的配置。
+                    </p>
+                    <div class="form-group">
+                        <label for="dashscopeApiKey">DashScope API Key (sk-...):</label>
+                        <div style="display: flex; gap: 10px; align-items: center;">
+                            <input type="password" id="dashscopeApiKey" placeholder="输入DashScope API Key（留空则使用环境变量）" 
+                                   style="flex: 1;" onblur="discoverModels()">
+                            <button type="button" class="btn btn-secondary" onclick="discoverModels()" 
+                                    style="white-space: nowrap; padding: 8px 16px;" id="discoverBtn">
+                                🔍 发现模型
+                            </button>
+                        </div>
+                        <small style="color: #6c757d; display: block; margin-top: 5px;">💡 提示：输入API Key后点击"发现模型"或离开输入框自动发现可用模型</small>
+                        <div id="discoverStatus" style="margin-top: 8px; font-size: 12px;"></div>
+                    </div>
+                    <div class="form-group">
+                        <label for="dashscopeEmbeddingModel">Embedding 模型:</label>
+                        <select id="dashscopeEmbeddingModel">
+                            <option value="">-- 请先输入API Key并发现模型 --</option>
+                        </select>
+                        <small id="embeddingModelDesc" style="color: #6c757d; display: block; margin-top: 5px;"></small>
+                    </div>
+                    <div class="form-group">
+                        <label for="dashscopeRerankModel">Rerank 模型:</label>
+                        <select id="dashscopeRerankModel">
+                            <option value="">-- 请先输入API Key并发现模型 --</option>
+                        </select>
+                        <small id="rerankModelDesc" style="color: #6c757d; display: block; margin-top: 5px;"></small>
+                    </div>
+                </div>
+                
                 <button class="btn btn-success" onclick="createKnowledgeBase()">创建知识库</button>
                 <div id="createResult"></div>
             </div>
@@ -632,6 +669,109 @@
             document.getElementById('docListKbId').value = kbId;
         }
 
+        // 模型发现功能
+        let discoveredModels = null;
+
+        async function discoverModels() {
+            const apiKey = document.getElementById('dashscopeApiKey').value.trim();
+            const statusDiv = document.getElementById('discoverStatus');
+            const discoverBtn = document.getElementById('discoverBtn');
+            
+            if (!apiKey) {
+                statusDiv.innerHTML = '<span style="color: #dc3545;">⚠️ 请先输入API Key</span>';
+                return;
+            }
+
+            statusDiv.innerHTML = '<span style="color: #17a2b8;">🔄 正在发现可用模型...</span>';
+            discoverBtn.disabled = true;
+            discoverBtn.textContent = '发现中...';
+
+            try {
+                const data = await apiCall('/api/knowledge/models/discover', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        provider: 'dashscope',
+                        api_key: apiKey
+                    })
+                });
+
+                if (data.success && data.data) {
+                    discoveredModels = data.data;
+                    updateModelSelectors(data.data);
+                    statusDiv.innerHTML = '<span style="color: #28a745;">✅ 成功发现 ' + 
+                        (data.data.embedding?.length || 0) + ' 个Embedding模型和 ' + 
+                        (data.data.rerank?.length || 0) + ' 个Rerank模型</span>';
+                } else {
+                    throw new Error('模型发现失败');
+                }
+            } catch (error) {
+                statusDiv.innerHTML = '<span style="color: #dc3545;">❌ 模型发现失败: ' + 
+                    (error.message || '未知错误') + '</span>';
+                console.error('Discover models error:', error);
+            } finally {
+                discoverBtn.disabled = false;
+                discoverBtn.textContent = '🔍 发现模型';
+            }
+        }
+
+        function updateModelSelectors(models) {
+            // 更新Embedding模型选择器
+            const embeddingSelect = document.getElementById('dashscopeEmbeddingModel');
+            const embeddingDesc = document.getElementById('embeddingModelDesc');
+            embeddingSelect.innerHTML = '<option value="">-- 选择Embedding模型 --</option>';
+            
+            if (models.embedding && models.embedding.length > 0) {
+                models.embedding.forEach(model => {
+                    const option = document.createElement('option');
+                    option.value = model.id;
+                    option.textContent = `${model.name} - ${model.description}`;
+                    if (model.id === 'text-embedding-v4') {
+                        option.selected = true;
+                        embeddingDesc.textContent = `维度: ${model.dimensions || 'N/A'}`;
+                    }
+                    embeddingSelect.appendChild(option);
+                });
+                
+                // 监听选择变化，更新描述
+                embeddingSelect.onchange = function() {
+                    const selectedModel = models.embedding.find(m => m.id === this.value);
+                    if (selectedModel) {
+                        embeddingDesc.textContent = `维度: ${selectedModel.dimensions || 'N/A'} | ${selectedModel.description}`;
+                    } else {
+                        embeddingDesc.textContent = '';
+                    }
+                };
+            }
+
+            // 更新Rerank模型选择器
+            const rerankSelect = document.getElementById('dashscopeRerankModel');
+            const rerankDesc = document.getElementById('rerankModelDesc');
+            rerankSelect.innerHTML = '<option value="">-- 选择Rerank模型 --</option>';
+            
+            if (models.rerank && models.rerank.length > 0) {
+                models.rerank.forEach(model => {
+                    const option = document.createElement('option');
+                    option.value = model.id;
+                    option.textContent = `${model.name} - ${model.description}`;
+                    if (model.id === 'gte-rerank') {
+                        option.selected = true;
+                        rerankDesc.textContent = model.description;
+                    }
+                    rerankSelect.appendChild(option);
+                });
+                
+                // 监听选择变化，更新描述
+                rerankSelect.onchange = function() {
+                    const selectedModel = models.rerank.find(m => m.id === this.value);
+                    if (selectedModel) {
+                        rerankDesc.textContent = selectedModel.description;
+                    } else {
+                        rerankDesc.textContent = '';
+                    }
+                };
+            }
+        }
+
         async function createKnowledgeBase() {
             try {
                 const name = document.getElementById('kbName').value;
@@ -645,12 +785,42 @@
                 const result = document.getElementById('createResult');
                 result.innerHTML = '<div class="loading"></div>';
 
+                // 获取DashScope配置
+                const dashscopeApiKey = document.getElementById('dashscopeApiKey').value.trim();
+                const dashscopeEmbeddingModel = document.getElementById('dashscopeEmbeddingModel').value.trim();
+                const dashscopeRerankModel = document.getElementById('dashscopeRerankModel').value.trim();
+                
+                const requestBody = {
+                    name: name,
+                    description: description,
+                    config: {}
+                };
+                
+                // 如果配置了DashScope API Key，添加到config中
+                if (dashscopeApiKey || dashscopeEmbeddingModel || dashscopeRerankModel) {
+                    requestBody.config.dashscope = {};
+                    
+                    if (dashscopeApiKey) {
+                        requestBody.config.dashscope.api_key = dashscopeApiKey;
+                    }
+                    
+                    if (dashscopeEmbeddingModel) {
+                        requestBody.config.dashscope.embedding_model = dashscopeEmbeddingModel;
+                    }
+                    
+                    if (dashscopeRerankModel) {
+                        requestBody.config.dashscope.rerank_model = dashscopeRerankModel;
+                    }
+                }
+                
+                // 如果config为空对象，则不发送
+                if (Object.keys(requestBody.config).length === 0) {
+                    delete requestBody.config;
+                }
+                
                 const data = await apiCall('/api/knowledge', {
                     method: 'POST',
-                    body: JSON.stringify({
-                        name: name,
-                        description: description
-                    })
+                    body: JSON.stringify(requestBody)
                 });
 
                 showResult('createResult', data, 'success');
@@ -658,6 +828,9 @@
                 // 清空表单
                 document.getElementById('kbName').value = '';
                 document.getElementById('kbDescription').value = '';
+                document.getElementById('dashscopeApiKey').value = '';
+                document.getElementById('dashscopeEmbeddingModel').value = '';
+                document.getElementById('dashscopeRerankModel').value = '';
                 
                 // 刷新列表
                 setTimeout(() => listKnowledgeBases(), 1000);
@@ -883,6 +1056,9 @@
                 
                 const data = await apiCall(`/api/knowledge/${kbId}/documents`);
                 
+                // 调试：输出原始数据
+                console.log('API Response:', data);
+                
                 if (data.success && data.data && data.data.documents) {
                     const documents = data.data.documents;
                     let html = '<div class="documents-list">';
@@ -891,18 +1067,23 @@
                         html += '<p style="text-align: center; color: #6c757d; padding: 20px;">暂无文档</p>';
                     } else {
                         documents.forEach(doc => {
+                            // 调试：输出每个文档的数据
+                            console.log('Document:', doc);
+                            console.log('Processing Info:', doc.processing_info);
+                            
                             const status = doc.status || 'unknown';
                             const statusClass = `status-${status}`;
-                            const chunkCount = doc.chunk_count || 0;
-                            const vectorizedCount = doc.vectorized_count || 0;
-                            const progress = chunkCount > 0 ? (vectorizedCount / chunkCount * 100).toFixed(1) : 0;
+                            const chunkCount = parseInt(doc.chunk_count) || 0;
+                            const vectorizedCount = parseInt(doc.vectorized_count) || 0;
+                            const progress = chunkCount > 0 ? ((vectorizedCount / chunkCount) * 100).toFixed(1) : 0;
                             
+                            // 确保正确解析 processing_info
                             const services = doc.processing_info || {};
-                            const embedderReady = services.embedder_ready || false;
+                            const embedderReady = services.embedder_ready === true || services.embedder_ready === 'true';
                             const embedderName = services.embedder_name || '未配置';
-                            const vectorStoreReady = services.vector_store_ready || false;
-                            const indexerReady = services.indexer_ready || false;
-                            const rerankerReady = services.reranker_ready || false;
+                            const vectorStoreReady = services.vector_store_ready === true || services.vector_store_ready === 'true';
+                            const indexerReady = services.indexer_ready === true || services.indexer_ready === 'true';
+                            const rerankerReady = services.reranker_ready === true || services.reranker_ready === 'true';
                             
                             const createTime = new Date(doc.create_time).toLocaleString('zh-CN');
                             const updateTime = new Date(doc.update_time).toLocaleString('zh-CN');
@@ -933,11 +1114,9 @@
                                         </div>
                                     </div>
                                     
-                                    ${chunkCount > 0 ? `
-                                    <div class="progress-bar">
-                                        <div class="progress-fill" style="width: ${progress}%"></div>
+                                    <div class="progress-bar" style="margin-top: 10px; ${chunkCount === 0 ? 'opacity: 0.5;' : ''}">
+                                        <div class="progress-fill" style="width: ${Math.min(100, parseFloat(progress))}%"></div>
                                     </div>
-                                    ` : ''}
                                     
                                     <div class="service-status">
                                         <span class="service-badge ${embedderReady ? 'service-ready' : 'service-not-ready'}">

@@ -1,0 +1,193 @@
+syntax = "proto3";
+
+package plugin_service;
+
+option go_package = "./proto/plugin_service";
+
+// 插件服务
+service PluginService {
+  // 上传插件
+  rpc UploadPlugin(UploadPluginRequest) returns (UploadPluginResponse);
+  
+  // 列出所有插件
+  rpc ListPlugins(ListPluginsRequest) returns (ListPluginsResponse);
+  
+  // 获取插件支持的模型
+  rpc GetModels(GetModelsRequest) returns (GetModelsResponse);
+  
+  // 启用插件
+  rpc EnablePlugin(EnablePluginRequest) returns (EnablePluginResponse);
+  
+  // 禁用插件
+  rpc DisablePlugin(DisablePluginRequest) returns (DisablePluginResponse);
+  
+  // 删除插件
+  rpc DeletePlugin(DeletePluginRequest) returns (DeletePluginResponse);
+  
+  // 向量化文本
+  rpc Embed(EmbedRequest) returns (EmbedResponse);
+  
+  // 批量向量化
+  rpc EmbedBatch(EmbedBatchRequest) returns (EmbedBatchResponse);
+  
+  // 重排序文档
+  rpc Rerank(RerankRequest) returns (RerankResponse);
+}
+
+// 上传插件请求
+message UploadPluginRequest {
+  bytes file_content = 1;  // 插件文件内容
+  string filename = 2;      // 文件名
+  uint32 user_id = 3;       // 用户ID
+}
+
+// 上传插件响应
+message UploadPluginResponse {
+  bool success = 1;
+  string message = 2;
+  string plugin_id = 3;
+  string filename = 4;
+}
+
+// 列出插件请求
+message ListPluginsRequest {
+  uint32 user_id = 1;
+}
+
+// 插件信息
+message PluginInfo {
+  string id = 1;
+  string name = 2;
+  string version = 3;
+  string description = 4;
+  string author = 5;
+  string license = 6;
+  string provider = 7;
+  string state = 8;
+  repeated CapabilityInfo capabilities = 9;
+}
+
+// 能力信息
+message CapabilityInfo {
+  string type = 1;
+  repeated string models = 2;
+}
+
+// 列出插件响应
+message ListPluginsResponse {
+  bool success = 1;
+  repeated PluginInfo plugins = 2;
+}
+
+// 获取模型请求
+message GetModelsRequest {
+  string plugin_id = 1;
+  string api_key = 2;
+  uint32 user_id = 3;
+}
+
+// 获取模型响应
+message GetModelsResponse {
+  bool success = 1;
+  map<string, ModelList> models = 2;  // key: capability_type, value: model list
+}
+
+message ModelList {
+  repeated string models = 1;
+}
+
+// 启用插件请求
+message EnablePluginRequest {
+  string plugin_id = 1;
+  uint32 user_id = 2;
+}
+
+// 启用插件响应
+message EnablePluginResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// 禁用插件请求
+message DisablePluginRequest {
+  string plugin_id = 1;
+  uint32 user_id = 2;
+}
+
+// 禁用插件响应
+message DisablePluginResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// 删除插件请求
+message DeletePluginRequest {
+  string plugin_id = 1;
+  uint32 user_id = 2;
+}
+
+// 删除插件响应
+message DeletePluginResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// 向量化请求
+message EmbedRequest {
+  string plugin_id = 1;
+  string text = 2;
+}
+
+// 向量化响应
+message EmbedResponse {
+  bool success = 1;
+  repeated float embedding = 2;
+  int32 dimensions = 3;
+  string error = 4;
+}
+
+// 批量向量化请求
+message EmbedBatchRequest {
+  string plugin_id = 1;
+  repeated string texts = 2;
+}
+
+// 批量向量化响应
+message EmbedBatchResponse {
+  bool success = 1;
+  repeated EmbeddingResult results = 2;
+  string error = 3;
+}
+
+message EmbeddingResult {
+  repeated float embedding = 1;
+}
+
+// 重排序请求
+message RerankRequest {
+  string plugin_id = 1;
+  string query = 2;
+  repeated RerankDocument documents = 3;
+}
+
+// 重排序文档
+message RerankDocument {
+  uint32 id = 1;
+  string content = 2;
+  double score = 3;
+}
+
+// 重排序响应
+message RerankResponse {
+  bool success = 1;
+  repeated RerankResult results = 2;
+  string error = 3;
+}
+
+// 重排序结果
+message RerankResult {
+  RerankDocument document = 1;
+  double score = 2;
+  int32 rank = 3;
+}
+

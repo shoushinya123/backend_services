@@ -247,10 +247,36 @@ go build -buildmode=plugin -o plugin.so plugin.go
 
 ### 6.2 注意事项
 
-1. **Go版本兼容**：插件和主程序必须使用相同的Go版本
-2. **依赖版本**：插件依赖的包版本必须与主程序兼容
-3. **CGO限制**：插件不能使用CGO（除非主程序也使用）
-4. **符号导出**：必须导出 `NewPlugin` 函数
+1. **架构匹配**（**非常重要**）：
+   - Go plugin系统要求插件和主程序必须在**完全相同的操作系统和架构**上编译
+   - 如果服务运行在Linux容器中（`GOOS=linux GOARCH=amd64`），插件也必须在Linux环境中编译
+   - **在macOS上编译的插件无法在Linux容器中运行**（会出现"Exec format error"）
+   
+   **编译插件的最佳实践**：
+   ```bash
+   # 方案1: 在Docker容器中编译（推荐）
+   docker run --rm \
+       -v "$(pwd):/workspace" \
+       -w /workspace/examples/plugins/dashscope \
+       golang:1.25-alpine \
+       sh -c "apk add --no-cache gcc musl-dev && \
+       CGO_ENABLED=1 go build -buildmode=plugin -o plugin.so plugin.go"
+   
+   # 方案2: 使用项目提供的编译脚本
+   ./build-plugin-simple.sh
+   
+   # 验证编译后的插件架构
+   file plugin.so  # 应显示: ELF 64-bit LSB shared object, x86-64 (Linux)
+   ```
+
+2. **Go版本兼容**：插件和主程序必须使用相同的Go版本
+3. **依赖版本**：插件依赖的包版本必须与主程序兼容
+4. **CGO限制**：插件不能使用CGO（除非主程序也使用）
+   - 如果插件使用CGO（如调用C库），则：
+     - 主程序必须也启用CGO (`CGO_ENABLED=1`)
+     - 插件和主程序必须使用相同的C编译器
+     - 建议使用alpine Linux进行编译（使用musl libc）
+5. **符号导出**：必须导出 `NewPlugin` 函数
 
 ## 七、创建manifest.json
 
@@ -288,13 +314,25 @@ go build -buildmode=plugin -o plugin.so plugin.go
 ### 8.1 手动打包
 
 ```bash
-# 1. 编译插件
-go build -buildmode=plugin -o plugin.so plugin.go
+# 1. 编译插件（必须在目标平台上编译）
+# 如果服务运行在Linux容器中，必须在Linux环境中编译
+docker run --rm \
+    -v "$(pwd):/workspace" \
+    -w /workspace \
+    golang:1.25-alpine \
+    sh -c "apk add --no-cache gcc musl-dev && \
+    CGO_ENABLED=1 go build -buildmode=plugin -o plugin.so plugin.go"
+
+# 或者使用项目提供的编译脚本
+./build-plugin-simple.sh
 
 # 2. 创建ZIP包
 zip my-plugin.xpkg manifest.json plugin.so README.md
 
-# 3. 计算校验和（可选）
+# 3. 验证插件架构
+file plugin.so  # 确保是Linux架构
+
+# 4. 计算校验和（可选）
 sha256sum my-plugin.xpkg
 ```
 
