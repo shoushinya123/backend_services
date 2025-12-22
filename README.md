@@ -13,6 +13,7 @@
 - **模型自动发现**: 输入 API Key 后自动发现可用模型（Dify 风格）
 - **实时状态显示**: 文档处理进度和状态实时更新
 - **知识库级配置**: 每个知识库可配置独立的 Embedding 和 Rerank 模型
+- **超长文本RAG**: 支持处理超过100万token的超长文档，基于Qwen-long-1M模型和Redis上下文拼接
 
 ## 🏗️ 技术架构
 
@@ -51,16 +52,25 @@
 docker-compose -f docker-compose.infra.yml up -d
 ```
 
-#### 2. 启动知识库服务
+#### 2. 启动知识库服务（包含Qwen模型服务）
 ```bash
 export DASHSCOPE_API_KEY="your-dashscope-api-key-here"
+export QWEN_MODEL_PATH="/path/to/qwen-model"  # 可选，本地模型路径
+export QWEN_LOCAL_MODE="true"  # 使用本地模型
 ./start-services.sh
 ```
 
 或手动启动：
 ```bash
 export DASHSCOPE_API_KEY="your-dashscope-api-key-here"
+export QWEN_MODEL_PATH="/path/to/qwen-model"  # 可选
+export QWEN_LOCAL_MODE="true"
 docker-compose -f docker-compose.services.yml up -d
+```
+
+**注意**: 如果使用超长文本RAG功能，需要启动Qwen模型服务。服务会自动启动，或可以单独启动：
+```bash
+docker-compose -f docker-compose.services.yml up -d qwen-model-service
 ```
 
 #### 3. 验证服务
@@ -143,6 +153,7 @@ docker-compose -f docker-compose.infra.yml down
 - `POST /api/knowledge/:id/upload` - 上传文档
 - `POST /api/knowledge/:id/upload-batch` - 批量上传文档
 - `POST /api/knowledge/:id/process` - 处理文档（分块、向量化）
+- `POST /api/knowledge/:id/process-long-text` - 处理超长文本（自动选择全读/兜底模式）
 - `GET /api/knowledge/:id/documents` - 获取文档列表（含处理状态）
 - `GET /api/knowledge/:id/documents/:doc_id` - 获取文档详情（含处理进度）
 - `POST /api/knowledge/:id/documents/:doc_id/index` - 生成索引
@@ -153,6 +164,11 @@ docker-compose -f docker-compose.infra.yml down
 ### 同步
 - `POST /api/knowledge/:id/sync/notion` - 同步 Notion 文档
 - `POST /api/knowledge/:id/sync/web` - 同步网页内容
+
+### 超长文本RAG（新增）
+- `POST /api/knowledge/:id/process-long-text` - 处理超长文本（自动选择全读/兜底模式）
+- `GET /api/knowledge/:id/qwen/health` - Qwen服务健康检查
+- `GET /api/knowledge/:id/cache/stats` - 获取Redis缓存统计信息（命中率、hits、misses）
 
 ### 系统
 - `GET /health` - 健康检查
@@ -179,6 +195,10 @@ docker-compose -f docker-compose.infra.yml down
 | `KAFKA_BROKERS` | Kafka Broker 地址 | localhost:9092 | 否 |
 | `HTTP_PROXY` | HTTP 代理 | - | 否 |
 | `HTTPS_PROXY` | HTTPS 代理 | - | 否 |
+| `QWEN_MODEL_PATH` | Qwen模型路径（本地模式） | - | 否 |
+| `QWEN_API_KEY` | Qwen API密钥（API模式） | - | 否 |
+| `QWEN_API_BASE` | Qwen API基础URL | https://dashscope.aliyuncs.com/compatible-mode/v1 | 否 |
+| `QWEN_LOCAL_MODE` | 是否使用本地模型 | true | 否 |
 
 ### 知识库配置（Dify 风格）
 
@@ -218,6 +238,7 @@ docker-compose -f docker-compose.infra.yml down
 #### 业务服务
 - **知识库服务**: `http://localhost:8001`
 - **健康检查**: `http://localhost:8001/health`
+- **Qwen模型服务**: `http://localhost:8004`（超长文本RAG功能）
 
 ### 代理配置
 
@@ -343,13 +364,24 @@ docker network inspect backend_services-main_ai-xia-network
 │   ├── config/             # 配置管理
 │   ├── database/           # 数据库
 │   ├── knowledge/          # 知识库核心逻辑
-│   │   ├── chunker.go      # 文档分块
+│   │   ├── chunker.go      # 文档分块（支持语义边界识别）
 │   │   ├── embedder.go     # 向量化
 │   │   ├── indexer.go      # 索引器
-│   │   ├── search_engine.go # 搜索引擎
+│   │   ├── search_engine.go # 搜索引擎（支持关联块召回）
 │   │   └── vector_store_milvus.go # Milvus 向量存储
 │   ├── services/           # 业务服务
+│   │   ├── token_counter.go # Token计数服务
+│   │   ├── redis_chunk_store.go # Redis分块存储
+│   │   ├── scenario_router.go # 场景路由（全读/兜底模式）
+│   │   ├── context_assembler.go # 上下文拼接
+│   │   └── knowledge_service.go # 知识库服务（含超长文本处理）
 │   └── models/             # 数据模型
+├── qwen_service/           # Qwen模型服务（Python）
+│   ├── main.py             # FastAPI服务
+│   ├── requirements.txt    # Python依赖
+│   └── Dockerfile          # Docker配置
+├── docs/                   # 文档
+│   └── LONG_TEXT_RAG.md    # 超长文本RAG功能文档
 ├── docker-compose.infra.yml    # 基础设施配置
 ├── docker-compose.services.yml # 业务服务配置
 ├── Dockerfile.knowledge        # Docker 镜像构建文件
@@ -422,6 +454,18 @@ curl http://localhost:8001/api/knowledge/1/documents
 curl "http://localhost:8001/api/knowledge/1/search?query=测试&mode=hybrid&topK=10"
 ```
 
+#### 超长文本处理
+```bash
+# 处理超长文本（自动选择全读/兜底模式）
+curl -X POST http://localhost:8001/api/knowledge/1/process-long-text
+
+# 检查Qwen服务健康状态
+curl http://localhost:8001/api/knowledge/1/qwen/health
+
+# 查看缓存统计
+curl http://localhost:8001/api/knowledge/1/cache/stats
+```
+
 ## 📝 开发说明
 
 ### 代码规范
@@ -438,7 +482,107 @@ go build -tags=knowledge -o knowledge-service ./cmd/knowledge/main.go
 ### 数据库迁移
 服务启动时会自动执行数据库迁移，创建必要的表结构。
 
+## 🚀 超长文本RAG功能
+
+### 功能概述
+
+系统现在支持处理超过100万token的超长文档，基于以下技术：
+
+- **Qwen-long-1M模型**: 支持处理最多100万token的上下文
+- **双模式处理**: 自动根据文档token数选择处理模式
+  - **全读模式**（≤100万token）: 直接使用Qwen模型全量处理
+  - **兜底模式**（>100万token）: 智能分块 + 混合检索 + Redis上下文拼接
+- **Redis上下文拼接**: 检索相关分块后自动召回关联块，拼接完整上下文
+- **智能分块**: 支持语义边界识别（段落、句子），减少上下文断层
+
+### 快速开始
+
+#### 1. 启动Qwen模型服务
+
+```bash
+# 使用Docker Compose（推荐）
+docker-compose -f docker-compose.services.yml up -d qwen-model-service
+
+# 或使用本地Python服务
+cd qwen_service
+pip install -r requirements.txt
+python main.py
+```
+
+#### 2. 配置环境变量
+
+```bash
+# 本地模型模式
+export QWEN_MODEL_PATH="/path/to/qwen-model"
+export QWEN_LOCAL_MODE="true"
+
+# 或API模式
+export QWEN_API_KEY="your-qwen-api-key"
+export QWEN_API_BASE="https://dashscope.aliyuncs.com/compatible-mode/v1"
+export QWEN_LOCAL_MODE="false"
+```
+
+#### 3. 使用超长文本处理
+
+```bash
+# 上传超长文档
+curl -X POST http://localhost:8001/api/knowledge/1/upload \
+  -F "file=@long_document.pdf"
+
+# 处理超长文本（自动选择模式）
+curl -X POST http://localhost:8001/api/knowledge/1/process-long-text
+
+# 搜索（自动使用拼接后的上下文）
+curl "http://localhost:8001/api/knowledge/1/search?query=你的问题"
+```
+
+### 配置说明
+
+在 `config.go` 中配置超长文本RAG相关参数：
+
+```yaml
+knowledge:
+  long_text:
+    qwen_service:
+      enabled: true
+      base_url: http://localhost
+      port: 8004
+      timeout: 300  # 5分钟
+      local_mode: true
+    redis_context:
+      enabled: true
+      ttl: 3600  # 1小时
+      compression: true
+      cache_hit_rate: true
+      max_context_size: 1000000  # 100万token
+    max_tokens: 1000000  # 阈值
+    fallback_mode: true
+    related_chunk_size: 1  # 前后各N块
+```
+
+### 性能指标
+
+- **分块处理速度**: ≤10万token/分钟（支持并行）
+- **检索+拼接响应时间**: ≤500ms
+- **缓存命中率**: 可通过 `/api/knowledge/:id/cache/stats` 查看
+
+### 详细文档
+
+更多详细信息请参考：[超长文本RAG功能文档](docs/LONG_TEXT_RAG.md)
+
 ## 🔄 更新日志
+
+### v1.2.0 (2025-12-XX)
+- ✨ **超长文本RAG功能**: 支持处理超过100万token的超长文档
+- ✨ **双模式处理**: 自动选择全读模式或兜底模式
+- ✨ **Qwen模型服务**: 独立的Python FastAPI服务，支持本地模型和API调用
+- ✨ **Redis上下文拼接**: 智能检索和拼接相关分块
+- ✨ **智能分块**: 支持语义边界识别，减少上下文断层
+- ✨ **缓存优化**: Redis缓存命中率统计和优化
+- ✨ **错误处理**: Qwen调用自动重试机制（最多3次）
+- ✨ **监控和日志**: 详细的处理进度、缓存统计和健康检查
+- 📝 新增API端点：`/process-long-text`, `/qwen/health`, `/cache/stats`
+- 📝 更新文档和配置说明
 
 ### v1.1.0 (2025-12-09)
 - ✨ 实现 Dify 风格的知识库配置（前端配置 API Key 和模型）
@@ -497,4 +641,9 @@ MIT License
 
 ---
 
-**最后更新**: 2025-12-09
+**最后更新**: 2025-12-XX
+
+## 📚 相关文档
+
+- [超长文本RAG功能详细文档](docs/LONG_TEXT_RAG.md)
+- [实现总结](IMPLEMENTATION_SUMMARY.md)

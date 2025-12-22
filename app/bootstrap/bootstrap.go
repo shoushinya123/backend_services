@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"log"
+	"time"
 
 	"github.com/aihub/backend-go/internal/config"
 	"github.com/aihub/backend-go/internal/consul"
@@ -9,6 +10,7 @@ import (
 	"github.com/aihub/backend-go/internal/database"
 	"github.com/aihub/backend-go/internal/kafka"
 	"github.com/aihub/backend-go/internal/logger"
+	"github.com/aihub/backend-go/internal/services"
 	"github.com/aihub/backend-go/internal/storage"
 	"github.com/aihub/backend-go/internal/vault"
 	"github.com/joho/godotenv"
@@ -198,6 +200,20 @@ func Init() (*App, error) {
 				return serviceRegistry.Deregister()
 			})
 		}
+	}
+
+	// 检查Qwen服务健康状态（如果启用）
+	if config.AppConfig.Knowledge.LongText.QwenService.Enabled {
+		go func() {
+			time.Sleep(5 * time.Second) // 等待服务启动
+			knowledgeService := services.NewKnowledgeService()
+			health := knowledgeService.CheckQwenHealth()
+			if health["status"] == "healthy" {
+				logger.Info("Qwen服务健康检查通过", zap.Any("status", health))
+			} else {
+				logger.Warn("Qwen服务健康检查失败", zap.Any("status", health))
+			}
+		}()
 	}
 
 	return app, nil

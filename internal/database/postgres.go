@@ -86,6 +86,8 @@ func autoMigrate(db *gorm.DB) error {
 				metadata json,
 				status varchar(20) DEFAULT 'processing',
 				vector_id varchar(255),
+				total_tokens integer DEFAULT 0,
+				processing_mode varchar(20) DEFAULT 'fallback',
 				create_time timestamptz DEFAULT NOW(),
 				update_time timestamptz,
 				CONSTRAINT fk_knowledge_bases_documents FOREIGN KEY (knowledge_base_id) REFERENCES knowledge_bases(knowledge_base_id)
@@ -106,10 +108,21 @@ func autoMigrate(db *gorm.DB) error {
 				vector_id varchar(255) NOT NULL,
 				embedding json,
 				metadata json,
+				token_count integer DEFAULT 0,
+				prev_chunk_id bigint,
+				next_chunk_id bigint,
+				document_total_tokens integer DEFAULT 0,
+				chunk_position integer DEFAULT 0,
+				related_chunk_ids json,
 				create_time timestamptz DEFAULT NOW(),
 				CONSTRAINT fk_knowledge_documents_chunks FOREIGN KEY (document_id) REFERENCES knowledge_documents(document_id)
 			)
 		`)
+	}
+	
+	// 执行迁移脚本添加新字段（如果表已存在）
+	if err := runMigrations(db); err != nil {
+		log.Printf("⚠️  Migration warning: %v", err)
 	}
 	
 	// 4. 最后创建搜索表（依赖knowledge_bases和users）
@@ -128,6 +141,63 @@ func autoMigrate(db *gorm.DB) error {
 				CONSTRAINT fk_users_searches FOREIGN KEY (user_id) REFERENCES users(user_id)
 			)
 		`)
+	}
+	
+	return nil
+}
+
+// runMigrations 执行数据库迁移脚本
+func runMigrations(db *gorm.DB) error {
+	// 迁移1: 添加超长文本支持字段
+	migrationSQL := `
+		-- Add fields to knowledge_documents table
+		DO $$ 
+		BEGIN
+			IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='knowledge_documents' AND column_name='total_tokens') THEN
+				ALTER TABLE knowledge_documents ADD COLUMN total_tokens INTEGER DEFAULT 0;
+			END IF;
+			IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='knowledge_documents' AND column_name='processing_mode') THEN
+				ALTER TABLE knowledge_documents ADD COLUMN processing_mode VARCHAR(20) DEFAULT 'fallback';
+			END IF;
+		END $$;
+
+		-- Add indexes for knowledge_documents
+		CREATE INDEX IF NOT EXISTS idx_knowledge_documents_processing_mode ON knowledge_documents(processing_mode);
+		CREATE INDEX IF NOT EXISTS idx_knowledge_documents_total_tokens ON knowledge_documents(total_tokens);
+
+		-- Add fields to knowledge_chunks table
+		DO $$ 
+		BEGIN
+			IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='knowledge_chunks' AND column_name='token_count') THEN
+				ALTER TABLE knowledge_chunks ADD COLUMN token_count INTEGER DEFAULT 0;
+			END IF;
+			IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='knowledge_chunks' AND column_name='prev_chunk_id') THEN
+				ALTER TABLE knowledge_chunks ADD COLUMN prev_chunk_id BIGINT;
+			END IF;
+			IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='knowledge_chunks' AND column_name='next_chunk_id') THEN
+				ALTER TABLE knowledge_chunks ADD COLUMN next_chunk_id BIGINT;
+			END IF;
+			IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='knowledge_chunks' AND column_name='document_total_tokens') THEN
+				ALTER TABLE knowledge_chunks ADD COLUMN document_total_tokens INTEGER DEFAULT 0;
+			END IF;
+			IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='knowledge_chunks' AND column_name='chunk_position') THEN
+				ALTER TABLE knowledge_chunks ADD COLUMN chunk_position INTEGER DEFAULT 0;
+			END IF;
+			IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='knowledge_chunks' AND column_name='related_chunk_ids') THEN
+				ALTER TABLE knowledge_chunks ADD COLUMN related_chunk_ids JSON;
+			END IF;
+		END $$;
+
+		-- Add indexes for knowledge_chunks
+		CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_prev_chunk_id ON knowledge_chunks(prev_chunk_id);
+		CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_next_chunk_id ON knowledge_chunks(next_chunk_id);
+		CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_document_id_chunk_index ON knowledge_chunks(document_id, chunk_index);
+		CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_token_count ON knowledge_chunks(token_count);
+		CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_chunk_position ON knowledge_chunks(chunk_position);
+	`
+	
+	if err := db.Exec(migrationSQL).Error; err != nil {
+		return fmt.Errorf("failed to run migrations: %w", err)
 	}
 	
 	return nil

@@ -23,13 +23,18 @@ import (
 
 // KnowledgeService 知识库服务
 type KnowledgeService struct {
-	tokenService *TokenService
-	chunker      *knowledge.Chunker
-	embedder     knowledge.Embedder
-	vectorStore  knowledge.VectorStore
-	indexer      knowledge.FulltextIndexer
-	searchEngine *knowledge.HybridSearchEngine
-	providerSvc  *ProviderService
+	tokenService    *TokenService
+	tokenCounter    *TokenCounter
+	chunker         *knowledge.Chunker
+	embedder        knowledge.Embedder
+	vectorStore     knowledge.VectorStore
+	indexer         knowledge.FulltextIndexer
+	searchEngine    *knowledge.HybridSearchEngine
+	providerSvc     *ProviderService
+	scenarioRouter  *ScenarioRouter
+	chunkStore      *RedisChunkStore
+	contextAssembler *ContextAssembler
+	qwenClient      *QwenModelClient
 }
 
 // NewKnowledgeService 创建知识库服务实例
@@ -93,15 +98,57 @@ func NewKnowledgeService() *KnowledgeService {
 	// 初始化rerank
 	reranker := selectRerankProvider(cfg, providerSvc)
 
-	return &KnowledgeService{
-		tokenService: NewTokenService(),
-		chunker:      chunker,
-		embedder:     embedder,
-		vectorStore:  vectorStore,
-		indexer:      indexer,
-		searchEngine: knowledge.NewHybridSearchEngine(indexer, vectorStore, embedder, reranker),
-		providerSvc:  providerSvc,
+	// 初始化超长文本RAG相关服务
+	tokenCounter := NewTokenCounter()
+	scenarioRouter := NewScenarioRouter(tokenCounter)
+	chunkStore, _ := NewRedisChunkStore()
+	contextAssembler, _ := NewContextAssembler(chunkStore, tokenCounter)
+	
+	// 初始化Qwen客户端（如果启用）
+	var qwenClient *QwenModelClient
+	if cfg.Knowledge.LongText.QwenService.Enabled {
+		qwenCfg := QwenServiceConfig{
+			Enabled:   cfg.Knowledge.LongText.QwenService.Enabled,
+			BaseURL:   cfg.Knowledge.LongText.QwenService.BaseURL,
+			Port:      cfg.Knowledge.LongText.QwenService.Port,
+			APIKey:    cfg.Knowledge.LongText.QwenService.APIKey,
+			Timeout:   cfg.Knowledge.LongText.QwenService.Timeout,
+			LocalMode: cfg.Knowledge.LongText.QwenService.LocalMode,
+		}
+		qwenClient, _ = NewQwenModelClient(qwenCfg)
 	}
+
+		searchEngine := knowledge.NewHybridSearchEngine(indexer, vectorStore, embedder, reranker)
+		
+		// 配置混合检索权重（向量60% + 全文40%）
+		searchEngine.SetWeights(0.6, 0.4)
+		
+		// 配置关联块数量
+		relatedChunkSize := 1
+		if cfg.Knowledge.LongText.RelatedChunkSize > 0 {
+			relatedChunkSize = cfg.Knowledge.LongText.RelatedChunkSize
+		}
+		searchEngine.SetRelatedChunkSize(relatedChunkSize)
+		
+		// 设置chunker的token计数器
+		if tokenCounter != nil {
+			chunker.SetTokenCounter(tokenCounter)
+		}
+
+		return &KnowledgeService{
+			tokenService:     NewTokenService(),
+			tokenCounter:      tokenCounter,
+			chunker:           chunker,
+			embedder:          embedder,
+			vectorStore:       vectorStore,
+			indexer:           indexer,
+			searchEngine:      searchEngine,
+			providerSvc:       providerSvc,
+			scenarioRouter:    scenarioRouter,
+			chunkStore:        chunkStore,
+			contextAssembler:  contextAssembler,
+			qwenClient:       qwenClient,
+		}
 }
 
 func selectEmbeddingProvider(cfg *config.Config, providerSvc *ProviderService) knowledge.Embedder {
@@ -757,6 +804,48 @@ func (s *KnowledgeService) SearchKnowledgeBaseWithMode(kbID, userID uint, query 
 		return nil, fmt.Errorf("搜索引擎未配置")
 	}
 
+	// 检查是否有超长文本文档（全读模式）
+	var fullReadDocs []models.KnowledgeDocument
+	database.DB.Where("knowledge_base_id = ? AND processing_mode = ?", kbID, ProcessingModeFullRead).
+		Find(&fullReadDocs)
+
+	// 如果有全读模式的文档，使用Qwen模型直接处理
+	if len(fullReadDocs) > 0 && s.qwenClient != nil {
+		// 合并所有全读文档的内容
+		var fullContent strings.Builder
+		for _, doc := range fullReadDocs {
+			if doc.Content != "" {
+				fullContent.WriteString(doc.Content)
+				fullContent.WriteString("\n\n")
+			}
+		}
+
+		// 构建prompt
+		prompt := fmt.Sprintf("基于以下文档内容回答问题：\n\n%s\n\n问题：%s\n\n回答：", fullContent.String(), query)
+
+		// 调用Qwen模型生成回答
+		answer, err := s.qwenClient.Generate(ctx, prompt, 2048)
+		if err == nil {
+			// 返回生成的回答作为结果
+			results := []map[string]interface{}{
+				{
+					"content":       answer,
+					"score":         1.0,
+					"metadata":      map[string]interface{}{"mode": "full_read", "source": "qwen"},
+					"match_context": answer,
+				},
+			}
+			// 缓存结果
+			if err := redisService.SetCache(cacheKey, results, 5*time.Minute); err != nil {
+				log.Printf("[knowledge] 缓存搜索结果失败: %v", err)
+			}
+			return results, nil
+		} else {
+			log.Printf("[knowledge] Qwen模型生成失败，降级到普通搜索: %v", err)
+		}
+	}
+
+	// 执行混合检索
 	matches, err := s.searchEngine.Search(ctx, knowledge.HybridSearchRequest{
 		KnowledgeBaseID: kbID,
 		Query:           query,
@@ -766,6 +855,79 @@ func (s *KnowledgeService) SearchKnowledgeBaseWithMode(kbID, userID uint, query 
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	// 检查是否有兜底模式的文档，需要上下文拼接
+	if len(matches) > 0 && s.contextAssembler != nil {
+		// 检查匹配的文档是否是兜底模式
+		docIDs := make(map[uint]bool)
+		for _, match := range matches {
+			docIDs[match.DocumentID] = true
+		}
+
+		var fallbackDocs []models.KnowledgeDocument
+		if len(docIDs) > 0 {
+			var docIDList []uint
+			for id := range docIDs {
+				docIDList = append(docIDList, id)
+			}
+			database.DB.Where("document_id IN ? AND processing_mode = ?", docIDList, ProcessingModeFallback).
+				Find(&fallbackDocs)
+		}
+
+		// 如果有兜底模式的文档，进行上下文拼接
+		if len(fallbackDocs) > 0 {
+			assembledContext, tokenCount, chunkIDs, err := s.contextAssembler.AssembleContext(ctx, kbID, query, s.searchEngine, topK)
+			if err == nil && assembledContext != "" {
+				// 使用拼接后的上下文调用Qwen模型生成回答
+				if s.qwenClient != nil {
+					prompt := fmt.Sprintf("基于以下文档内容回答问题：\n\n%s\n\n问题：%s\n\n回答：", assembledContext, query)
+					answer, err := s.qwenClient.Generate(ctx, prompt, 2048)
+					if err == nil {
+						results := []map[string]interface{}{
+							{
+								"content":       answer,
+								"score":         1.0,
+								"metadata": map[string]interface{}{
+									"mode":         "fallback",
+									"source":       "qwen",
+									"token_count":  tokenCount,
+									"chunk_ids":    chunkIDs,
+									"context_size": len(assembledContext),
+								},
+								"match_context": answer,
+							},
+						}
+						// 缓存结果
+						if err := redisService.SetCache(cacheKey, results, 5*time.Minute); err != nil {
+							log.Printf("[knowledge] 缓存搜索结果失败: %v", err)
+						}
+						return results, nil
+					}
+				}
+
+				// 如果Qwen模型不可用，返回拼接后的上下文
+				results := []map[string]interface{}{
+					{
+						"content":       assembledContext,
+						"score":         1.0,
+						"metadata": map[string]interface{}{
+							"mode":         "fallback",
+							"source":       "context_assembler",
+							"token_count":  tokenCount,
+							"chunk_ids":    chunkIDs,
+							"context_size": len(assembledContext),
+						},
+						"match_context": assembledContext,
+					},
+				}
+				// 缓存结果
+				if err := redisService.SetCache(cacheKey, results, 5*time.Minute); err != nil {
+					log.Printf("[knowledge] 缓存搜索结果失败: %v", err)
+				}
+				return results, nil
+			}
+		}
 	}
 
 	enriched := s.enrichMatchMetadata(matches)
@@ -1047,19 +1209,91 @@ func (s *KnowledgeService) processDocument(documentID uint) error {
 					content = string(contentBytes)
 				}
 				doc.Content = content
+				// 保存内容到数据库
+				database.DB.Model(&doc).Update("content", content)
 			}
 		}
 	}
 
+	// 确定处理模式（全读或兜底）
+	mode, err := s.scenarioRouter.DetermineProcessingMode(ctx, documentID)
+	if err != nil {
+		log.Printf("[knowledge] Failed to determine processing mode: %v, using fallback", err)
+		mode = ProcessingModeFallback
+	}
+
+	// 根据模式选择处理流程
+	if mode == ProcessingModeFullRead {
+		return s.processFullReadMode(ctx, &doc, kbConfig, embedder, redisService, statusKey)
+	} else {
+		return s.processFallbackMode(ctx, &doc, kbConfig, embedder, redisService, statusKey)
+	}
+}
+
+// processFullReadMode 全读模式处理（≤100万token）
+func (s *KnowledgeService) processFullReadMode(ctx context.Context, doc *models.KnowledgeDocument, kbConfig map[string]interface{}, embedder knowledge.Embedder, redisService *middleware.RedisService, statusKey string) error {
+	log.Printf("[knowledge] Processing document %d in FULL_READ mode", doc.DocumentID)
+
+	// 更新状态
+	redisService.SetCache(statusKey, map[string]interface{}{
+		"status":       "processing",
+		"mode":         "full_read",
+		"started_at":   time.Now().Format(time.RFC3339),
+		"progress":     0.0,
+	}, 1*time.Hour)
+
+	// 全读模式：直接使用Qwen模型处理，不需要分块
+	// 这里只标记文档为已完成，实际生成在搜索时进行
+	doc.Status = "completed"
+	doc.ProcessingMode = ProcessingModeFullRead
+	doc.UpdateTime = time.Now()
+	
+	if err := database.DB.Save(doc).Error; err != nil {
+		return err
+	}
+
+	// 更新Redis状态
+	redisService.SetCache(statusKey, map[string]interface{}{
+		"status":       "completed",
+		"mode":         "full_read",
+		"completed_at": time.Now().Format(time.RFC3339),
+		"progress":     100.0,
+	}, 1*time.Hour)
+
+	return nil
+}
+
+// processFallbackMode 兜底模式处理（>100万token）
+func (s *KnowledgeService) processFallbackMode(ctx context.Context, doc *models.KnowledgeDocument, kbConfig map[string]interface{}, embedder knowledge.Embedder, redisService *middleware.RedisService, statusKey string) error {
+	log.Printf("[knowledge] Processing document %d in FALLBACK mode", doc.DocumentID)
+
+	// 更新状态
+	redisService.SetCache(statusKey, map[string]interface{}{
+		"status":       "processing",
+		"mode":         "fallback",
+		"started_at":   time.Now().Format(time.RFC3339),
+		"progress":     0.0,
+	}, 1*time.Hour)
+
+	// 计算文档总token数
+	totalTokens, err := s.tokenCounter.CountTokens(ctx, doc.Content)
+	if err != nil {
+		log.Printf("[knowledge] Failed to count tokens: %v", err)
+		totalTokens = 0
+	}
+
+	// 分块处理
 	chunks := s.chunker.Split(doc.Content)
 	totalChunks := len(chunks)
 	if totalChunks == 0 {
 		doc.Status = "completed"
+		doc.ProcessingMode = ProcessingModeFallback
+		doc.TotalTokens = totalTokens
 		doc.UpdateTime = time.Now()
-		database.DB.Save(&doc)
-		// 更新Redis状态
+		database.DB.Save(doc)
 		redisService.SetCache(statusKey, map[string]interface{}{
 			"status":       "completed",
+			"mode":         "fallback",
 			"completed_at": time.Now().Format(time.RFC3339),
 			"chunks_count": 0,
 			"processed":    0,
@@ -1068,9 +1302,10 @@ func (s *KnowledgeService) processDocument(documentID uint) error {
 		return nil
 	}
 
-	// 更新Redis状态：开始处理
+	// 更新Redis状态
 	redisService.SetCache(statusKey, map[string]interface{}{
 		"status":       "processing",
+		"mode":         "fallback",
 		"started_at":   time.Now().Format(time.RFC3339),
 		"chunks_count": totalChunks,
 		"processed":    0,
@@ -1078,7 +1313,12 @@ func (s *KnowledgeService) processDocument(documentID uint) error {
 	}, 1*time.Hour)
 
 	processedCount := 0
-	for _, item := range chunks {
+	var prevChunkID *uint
+
+	for i, item := range chunks {
+		// 计算当前块的token数
+		chunkTokens, _ := s.tokenCounter.CountTokens(ctx, item.Text)
+
 		meta := map[string]interface{}{
 			"document_title": doc.Title,
 			"source":         doc.Source,
@@ -1091,29 +1331,57 @@ func (s *KnowledgeService) processDocument(documentID uint) error {
 		metaJSON, _ := json.Marshal(meta)
 
 		chunk := &models.KnowledgeChunk{
-			DocumentID: documentID,
-			Content:    item.Text,
-			ChunkIndex: item.Index,
-			Metadata:   string(metaJSON),
-			CreateTime: time.Now(),
+			DocumentID:          doc.DocumentID,
+			Content:            item.Text,
+			ChunkIndex:         item.Index,
+			Metadata:           string(metaJSON),
+			TokenCount:         chunkTokens,
+			DocumentTotalTokens: totalTokens,
+			ChunkPosition:      i,
+			PrevChunkID:        prevChunkID,
+			CreateTime:         time.Now(),
 		}
 
 		if err := database.DB.Create(chunk).Error; err != nil {
 			return err
 		}
 
-		// 更新处理进度（每处理一个chunk更新一次）
+		// 更新前一个块的NextChunkID
+		if prevChunkID != nil {
+			database.DB.Model(&models.KnowledgeChunk{}).
+				Where("chunk_id = ?", *prevChunkID).
+				Update("next_chunk_id", chunk.ChunkID)
+		}
+
+		// 存储到Redis
+		if s.chunkStore != nil {
+			chunkData := ChunkData{
+				ChunkID:            chunk.ChunkID,
+				DocumentID:         chunk.DocumentID,
+				Content:            chunk.Content,
+				ChunkIndex:         chunk.ChunkIndex,
+				TokenCount:         chunk.TokenCount,
+				PrevChunkID:        chunk.PrevChunkID,
+				NextChunkID:        nil, // 将在下一个循环中设置
+				DocumentTotalTokens: chunk.DocumentTotalTokens,
+				ChunkPosition:      chunk.ChunkPosition,
+			}
+			s.chunkStore.StoreChunk(ctx, chunkData)
+		}
+
+		// 更新处理进度
 		processedCount++
 		progress := float64(processedCount) / float64(totalChunks) * 100.0
 		redisService.SetCache(statusKey, map[string]interface{}{
 			"status":       "processing",
+			"mode":         "fallback",
 			"started_at":   time.Now().Format(time.RFC3339),
 			"chunks_count": totalChunks,
 			"processed":    processedCount,
 			"progress":     progress,
 		}, 1*time.Hour)
 
-		// 向量化（使用知识库指定的embedder）
+		// 向量化
 		var embedding []float32
 		if embedder != nil && embedder.Ready() {
 			vec, err := embedder.Embed(ctx, item.Text)
@@ -1123,7 +1391,6 @@ func (s *KnowledgeService) processDocument(documentID uint) error {
 				embedding = vec
 			}
 		} else if s.embedder != nil && s.embedder.Ready() {
-			// 降级到默认embedder
 			vec, err := s.embedder.Embed(ctx, item.Text)
 			if err != nil {
 				log.Printf("[knowledge] embed chunk failed: %v", err)
@@ -1135,7 +1402,7 @@ func (s *KnowledgeService) processDocument(documentID uint) error {
 		if len(embedding) > 0 && s.vectorStore != nil && s.vectorStore.Ready() {
 			vectorID, err := s.vectorStore.UpsertChunk(ctx, knowledge.VectorChunk{
 				ChunkID:         chunk.ChunkID,
-				DocumentID:      documentID,
+				DocumentID:      doc.DocumentID,
 				KnowledgeBaseID: doc.KnowledgeBaseID,
 				Text:            item.Text,
 				Embedding:       embedding,
@@ -1155,12 +1422,13 @@ func (s *KnowledgeService) processDocument(documentID uint) error {
 			}
 		}
 
+		// 全文索引
 		if s.indexer != nil && s.indexer.Ready() {
 			indexMeta := map[string]interface{}{}
 			_ = json.Unmarshal([]byte(chunk.Metadata), &indexMeta)
 			fullChunk := knowledge.FulltextChunk{
 				ChunkID:         chunk.ChunkID,
-				DocumentID:      documentID,
+				DocumentID:      doc.DocumentID,
 				KnowledgeBaseID: doc.KnowledgeBaseID,
 				Content:         chunk.Content,
 				ChunkIndex:      chunk.ChunkIndex,
@@ -1173,15 +1441,20 @@ func (s *KnowledgeService) processDocument(documentID uint) error {
 				log.Printf("[knowledge] index chunk failed: %v", err)
 			}
 		}
+
+		prevChunkID = &chunk.ChunkID
 	}
 
 	doc.Status = "completed"
+	doc.ProcessingMode = ProcessingModeFallback
+	doc.TotalTokens = totalTokens
 	doc.UpdateTime = time.Now()
-	database.DB.Save(&doc)
+	database.DB.Save(doc)
 
-	// 更新Redis状态：处理完成
+	// 更新Redis状态
 	redisService.SetCache(statusKey, map[string]interface{}{
 		"status":       "completed",
+		"mode":         "fallback",
 		"completed_at": time.Now().Format(time.RFC3339),
 		"chunks_count": totalChunks,
 		"processed":    processedCount,
@@ -1614,4 +1887,46 @@ func (s *KnowledgeService) SyncWebContent(kbID, userID uint, req map[string]inte
 	}
 
 	return documents, nil
+}
+
+// CheckQwenHealth 检查Qwen服务健康状态
+func (s *KnowledgeService) CheckQwenHealth() map[string]interface{} {
+	if s.qwenClient == nil {
+		return map[string]interface{}{
+			"status":  "unavailable",
+			"message": "Qwen客户端未初始化",
+		}
+	}
+
+	ctx := context.Background()
+	err := s.qwenClient.HealthCheck(ctx)
+	if err != nil {
+		return map[string]interface{}{
+			"status":  "unhealthy",
+			"message": err.Error(),
+		}
+	}
+
+	return map[string]interface{}{
+		"status":  "healthy",
+		"message": "Qwen服务正常",
+	}
+}
+
+// GetCacheStats 获取缓存统计信息
+func (s *KnowledgeService) GetCacheStats() map[string]interface{} {
+	if s.chunkStore == nil {
+		return map[string]interface{}{
+			"enabled": false,
+			"message": "Redis分块存储未启用",
+		}
+	}
+
+	hits, misses, hitRate := s.chunkStore.GetCacheStats()
+	return map[string]interface{}{
+		"enabled":  true,
+		"hits":     hits,
+		"misses":   misses,
+		"hit_rate": hitRate,
+	}
 }

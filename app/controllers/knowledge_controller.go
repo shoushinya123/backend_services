@@ -305,6 +305,58 @@ func (c *KnowledgeController) UploadBatch() {
 	c.JSONSuccess(result)
 }
 
+// POST /api/knowledge/:id/process-long-text
+func (c *KnowledgeController) ProcessLongText() {
+	userID, ok := c.getAuthenticatedUserID()
+	if !ok {
+		return
+	}
+
+	kbID, ok := c.mustParseUintParam(":id")
+	if !ok {
+		return
+	}
+
+	// 处理知识库中的所有文档（超长文本模式）
+	err := c.knowledgeService.ProcessDocuments(uint(kbID), userID)
+	if err != nil {
+		log.Printf("[knowledge] ProcessLongText error: %v", err)
+		c.JSONError(http.StatusInternalServerError, fmt.Sprintf("处理失败: %v", err))
+		return
+	}
+
+	c.JSONSuccess(map[string]string{"message": "超长文本处理已启动"})
+}
+
+// GET /api/knowledge/:id/qwen/health
+func (c *KnowledgeController) QwenHealthCheck() {
+	_, ok := c.mustParseUintParam(":id")
+	if !ok {
+		return
+	}
+
+	// 检查Qwen服务健康状态
+	healthStatus := c.knowledgeService.CheckQwenHealth()
+	
+	if healthStatus["status"] == "healthy" {
+		c.JSONSuccess(healthStatus)
+	} else {
+		c.JSONError(http.StatusServiceUnavailable, "Qwen服务不可用")
+	}
+}
+
+// GET /api/knowledge/:id/cache/stats
+func (c *KnowledgeController) GetCacheStats() {
+	_, ok := c.mustParseUintParam(":id")
+	if !ok {
+		return
+	}
+
+	// 获取缓存统计信息
+	stats := c.knowledgeService.GetCacheStats()
+	c.JSONSuccess(stats)
+}
+
 // POST /api/knowledge/:id/process
 func (c *KnowledgeController) ProcessDocuments() {
 	userID, ok := c.getAuthenticatedUserID()

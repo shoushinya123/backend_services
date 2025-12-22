@@ -47,6 +47,36 @@ services:
       timeout: 10s
       retries: 3
 
+  # Qwen模型服务
+  qwen-model-service:
+    build:
+      context: ./qwen_service
+      dockerfile: Dockerfile
+    container_name: qwen-model-service
+    environment:
+      PORT: 8004
+      QWEN_MODEL_PATH: ${QWEN_MODEL_PATH:-}
+      QWEN_API_KEY: ${QWEN_API_KEY:-}
+      QWEN_API_BASE: ${QWEN_API_BASE:-https://dashscope.aliyuncs.com/compatible-mode/v1}
+      QWEN_LOCAL_MODE: ${QWEN_LOCAL_MODE:-true}
+      HTTP_PROXY: http://host.docker.internal:12334
+      HTTPS_PROXY: http://host.docker.internal:12334
+      http_proxy: http://host.docker.internal:12334
+      https_proxy: http://host.docker.internal:12334
+      NO_PROXY: localhost,127.0.0.1
+      no_proxy: localhost,127.0.0.1
+    ports:
+      - "8004:8004"
+    networks:
+      - ai-xia-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8004/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
 networks:
   ai-xia-network:
     external: true

@@ -118,6 +118,7 @@ type KnowledgeConfig struct {
 	VectorStore  VectorStoreConfig
 	Embedding    EmbeddingConfig
 	Rerank       RerankConfig
+	LongText     LongTextConfig // 超长文本RAG配置
 }
 
 type ProviderConfig struct {
@@ -175,6 +176,31 @@ type RerankConfig struct {
 	ModelCode    string
 	CredentialID uint
 	TopN         int // Rerank候选数量
+}
+
+type LongTextConfig struct {
+	QwenService      QwenServiceConfig
+	RedisContext     RedisContextConfig
+	MaxTokens        int // 最大token数阈值（默认100万）
+	FallbackMode     bool // 是否启用兜底模式
+	RelatedChunkSize int // 关联块数量（前后各N块，默认1）
+}
+
+type QwenServiceConfig struct {
+	Enabled   bool
+	BaseURL   string // Qwen模型服务地址
+	Port      int    // 服务端口
+	Timeout   int    // 超时时间（秒）
+	APIKey    string // API密钥（如果使用API模式）
+	LocalMode bool   // 是否使用本地模型
+}
+
+type RedisContextConfig struct {
+	Enabled         bool
+	TTL             int  // 缓存过期时间（秒，默认3600）
+	Compression     bool // 是否启用LZ4压缩
+	CacheHitRate    bool // 是否统计缓存命中率
+	MaxContextSize  int  // 最大上下文大小（token数，默认100万）
 }
 
 type WeChatPayConfig struct {
@@ -268,6 +294,21 @@ func LoadConfig() error {
 	viper.SetDefault("knowledge.rerank.model_code", "")
 	viper.SetDefault("knowledge.rerank.credential_id", 0)
 	viper.SetDefault("knowledge.rerank.top_n", 50)
+	
+	// 超长文本RAG配置默认值
+	viper.SetDefault("knowledge.long_text.qwen_service.enabled", false)
+	viper.SetDefault("knowledge.long_text.qwen_service.base_url", "http://localhost")
+	viper.SetDefault("knowledge.long_text.qwen_service.port", 8004)
+	viper.SetDefault("knowledge.long_text.qwen_service.timeout", 300) // 5分钟
+	viper.SetDefault("knowledge.long_text.qwen_service.local_mode", true)
+	viper.SetDefault("knowledge.long_text.redis_context.enabled", true)
+	viper.SetDefault("knowledge.long_text.redis_context.ttl", 3600) // 1小时
+	viper.SetDefault("knowledge.long_text.redis_context.compression", true)
+	viper.SetDefault("knowledge.long_text.redis_context.cache_hit_rate", true)
+	viper.SetDefault("knowledge.long_text.redis_context.max_context_size", 1000000) // 100万token
+	viper.SetDefault("knowledge.long_text.max_tokens", 1000000) // 100万token阈值
+	viper.SetDefault("knowledge.long_text.fallback_mode", true)
+	viper.SetDefault("knowledge.long_text.related_chunk_size", 1) // 前后各1块
 
 	// Provider config defaults
 	viper.SetDefault("provider.catalog_cache_ttl_seconds", 300)
@@ -404,6 +445,32 @@ func LoadConfig() error {
 	}
 	if dashscopeEmbeddingModel := os.Getenv("DASHSCOPE_EMBEDDING_MODEL"); dashscopeEmbeddingModel != "" {
 		viper.Set("knowledge.embedding.dashscope_model", dashscopeEmbeddingModel)
+	}
+	
+	// 超长文本RAG配置环境变量
+	if qwenServiceEnabled := os.Getenv("QWEN_SERVICE_ENABLED"); qwenServiceEnabled == "true" {
+		viper.Set("knowledge.long_text.qwen_service.enabled", true)
+	}
+	if qwenServiceURL := os.Getenv("QWEN_SERVICE_URL"); qwenServiceURL != "" {
+		viper.Set("knowledge.long_text.qwen_service.base_url", qwenServiceURL)
+	}
+	if qwenServicePort := os.Getenv("QWEN_SERVICE_PORT"); qwenServicePort != "" {
+		viper.Set("knowledge.long_text.qwen_service.port", qwenServicePort)
+	}
+	if qwenServiceTimeout := os.Getenv("QWEN_SERVICE_TIMEOUT"); qwenServiceTimeout != "" {
+		viper.Set("knowledge.long_text.qwen_service.timeout", qwenServiceTimeout)
+	}
+	if qwenServiceAPIKey := os.Getenv("QWEN_SERVICE_API_KEY"); qwenServiceAPIKey != "" {
+		viper.Set("knowledge.long_text.qwen_service.api_key", qwenServiceAPIKey)
+	}
+	if qwenLocalMode := os.Getenv("QWEN_LOCAL_MODE"); qwenLocalMode == "true" {
+		viper.Set("knowledge.long_text.qwen_service.local_mode", true)
+	}
+	if redisContextTTL := os.Getenv("REDIS_CONTEXT_TTL"); redisContextTTL != "" {
+		viper.Set("knowledge.long_text.redis_context.ttl", redisContextTTL)
+	}
+	if maxTokens := os.Getenv("MAX_TOKENS_THRESHOLD"); maxTokens != "" {
+		viper.Set("knowledge.long_text.max_tokens", maxTokens)
 	}
 
 	// 文件上传配置环境变量
@@ -556,6 +623,26 @@ func LoadConfig() error {
 				ModelCode:    viper.GetString("knowledge.rerank.model_code"),
 				CredentialID: uint(viper.GetInt("knowledge.rerank.credential_id")),
 				TopN:         viper.GetInt("knowledge.rerank.top_n"),
+			},
+			LongText: LongTextConfig{
+				QwenService: QwenServiceConfig{
+					Enabled:   viper.GetBool("knowledge.long_text.qwen_service.enabled"),
+					BaseURL:   viper.GetString("knowledge.long_text.qwen_service.base_url"),
+					Port:      viper.GetInt("knowledge.long_text.qwen_service.port"),
+					Timeout:   viper.GetInt("knowledge.long_text.qwen_service.timeout"),
+					APIKey:    viper.GetString("knowledge.long_text.qwen_service.api_key"),
+					LocalMode: viper.GetBool("knowledge.long_text.qwen_service.local_mode"),
+				},
+				RedisContext: RedisContextConfig{
+					Enabled:        viper.GetBool("knowledge.long_text.redis_context.enabled"),
+					TTL:            viper.GetInt("knowledge.long_text.redis_context.ttl"),
+					Compression:    viper.GetBool("knowledge.long_text.redis_context.compression"),
+					CacheHitRate:   viper.GetBool("knowledge.long_text.redis_context.cache_hit_rate"),
+					MaxContextSize: viper.GetInt("knowledge.long_text.redis_context.max_context_size"),
+				},
+				MaxTokens:        viper.GetInt("knowledge.long_text.max_tokens"),
+				FallbackMode:     viper.GetBool("knowledge.long_text.fallback_mode"),
+				RelatedChunkSize: viper.GetInt("knowledge.long_text.related_chunk_size"),
 			},
 		},
 		Provider: ProviderConfig{

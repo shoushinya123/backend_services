@@ -225,6 +225,8 @@ type KnowledgeDocument struct {
 	Metadata        string        `gorm:"type:json" json:"metadata"`
 	Status          string        `gorm:"size:20;default:processing" json:"status"`
 	VectorID        string        `gorm:"size:255" json:"vector_id"`
+	TotalTokens     int           `gorm:"column:total_tokens;default:0" json:"total_tokens"` // 文档总token数
+	ProcessingMode  string        `gorm:"column:processing_mode;size:20;default:fallback" json:"processing_mode"` // full_read | fallback
 	CreateTime      time.Time     `gorm:"column:create_time" json:"create_time"`
 	UpdateTime      time.Time     `gorm:"column:update_time" json:"update_time"`
 
@@ -238,15 +240,21 @@ func (KnowledgeDocument) TableName() string {
 
 // KnowledgeChunk 知识块
 type KnowledgeChunk struct {
-	ChunkID    uint              `gorm:"primaryKey;column:chunk_id" json:"chunk_id"`
-	DocumentID uint              `gorm:"column:document_id;not null" json:"document_id"`
-	Document   KnowledgeDocument `gorm:"foreignKey:DocumentID"`
-	Content    string            `gorm:"type:text;not null" json:"content"`
-	ChunkIndex int               `gorm:"not null" json:"chunk_index"`
-	VectorID   string            `gorm:"size:255;not null" json:"vector_id"`
-	Embedding  string            `gorm:"type:json" json:"embedding"`
-	Metadata   string            `gorm:"type:json" json:"metadata"`
-	CreateTime time.Time         `gorm:"column:create_time" json:"create_time"`
+	ChunkID          uint              `gorm:"primaryKey;column:chunk_id" json:"chunk_id"`
+	DocumentID       uint              `gorm:"column:document_id;not null;index" json:"document_id"`
+	Document         KnowledgeDocument `gorm:"foreignKey:DocumentID"`
+	Content          string            `gorm:"type:text;not null" json:"content"`
+	ChunkIndex       int               `gorm:"not null;index" json:"chunk_index"`
+	VectorID         string            `gorm:"size:255;not null" json:"vector_id"`
+	Embedding        string            `gorm:"type:json" json:"embedding"`
+	Metadata         string            `gorm:"type:json" json:"metadata"`
+	TokenCount       int               `gorm:"column:token_count;default:0" json:"token_count"`                    // 当前块的token数
+	PrevChunkID      *uint             `gorm:"column:prev_chunk_id;index" json:"prev_chunk_id"`                    // 前一个块的ID
+	NextChunkID      *uint             `gorm:"column:next_chunk_id;index" json:"next_chunk_id"`                    // 下一个块的ID
+	DocumentTotalTokens int            `gorm:"column:document_total_tokens;default:0" json:"document_total_tokens"` // 文档总token数（冗余字段，便于查询）
+	ChunkPosition    int               `gorm:"column:chunk_position;default:0" json:"chunk_position"`                // 块在文档中的位置（0-based）
+	RelatedChunkIDs  string            `gorm:"type:json;column:related_chunk_ids" json:"related_chunk_ids"`      // 关联块ID列表（JSON数组）
+	CreateTime       time.Time         `gorm:"column:create_time" json:"create_time"`
 }
 
 func (KnowledgeChunk) TableName() string {

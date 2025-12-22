@@ -20,18 +20,41 @@ type HybridSearchRequest struct {
 
 // HybridSearchEngine 组合全文与向量搜索
 type HybridSearchEngine struct {
-	indexer     FulltextIndexer
-	vectorStore VectorStore
-	embedder    Embedder
-	reranker    Reranker // 重排序器
+	indexer          FulltextIndexer
+	vectorStore      VectorStore
+	embedder         Embedder
+	reranker         Reranker // 重排序器
+	relatedChunkSize int      // 关联块数量（前后各N块，默认1）
+	vectorWeight     float64  // 向量检索权重（默认0.6）
+	fulltextWeight   float64  // 全文检索权重（默认0.4）
 }
 
 func NewHybridSearchEngine(indexer FulltextIndexer, vectorStore VectorStore, embedder Embedder, reranker Reranker) *HybridSearchEngine {
 	return &HybridSearchEngine{
-		indexer:     indexer,
-		vectorStore: vectorStore,
-		embedder:    embedder,
-		reranker:    reranker,
+		indexer:          indexer,
+		vectorStore:      vectorStore,
+		embedder:         embedder,
+		reranker:         reranker,
+		relatedChunkSize: 1,      // 默认前后各1块
+		vectorWeight:     0.6,    // 向量检索权重60%
+		fulltextWeight:   0.4,    // 全文检索权重40%
+	}
+}
+
+// SetRelatedChunkSize 设置关联块数量
+func (e *HybridSearchEngine) SetRelatedChunkSize(size int) {
+	if size >= 0 {
+		e.relatedChunkSize = size
+	}
+}
+
+// SetWeights 设置混合检索权重
+func (e *HybridSearchEngine) SetWeights(vectorWeight, fulltextWeight float64) {
+	if vectorWeight > 0 && fulltextWeight > 0 {
+		// 归一化权重
+		total := vectorWeight + fulltextWeight
+		e.vectorWeight = vectorWeight / total
+		e.fulltextWeight = fulltextWeight / total
 	}
 }
 
@@ -222,8 +245,18 @@ func (e *HybridSearchEngine) Search(ctx context.Context, req HybridSearchRequest
 		return fullResults, nil
 	}
 
-	// 混合检索：加权融合（全文×0.6 + 向量×0.4）
-	return e.mergeResults(ctx, req, vectorResults, fullResults)
+	// 混合检索：加权融合（向量×0.6 + 全文×0.4）
+	results, err := e.mergeResults(ctx, req, vectorResults, fullResults)
+	if err != nil {
+		return nil, err
+	}
+	
+	// 关联块召回：为每个结果添加前后关联块
+	if e.relatedChunkSize > 0 {
+		results = e.expandWithRelatedChunks(ctx, results)
+	}
+	
+	return results, nil
 }
 
 // searchAutoKeywordShort 自动适配：短查询+关键词型
@@ -370,13 +403,13 @@ func (e *HybridSearchEngine) mergeResults(ctx context.Context, req HybridSearchR
 		}
 	}
 
-	// 融合得分：全文×0.6 + 向量×0.4
+	// 融合得分：向量×vectorWeight + 全文×fulltextWeight
 	scoreMap := make(map[uint]*SearchMatch)
 
 	// 处理向量结果
 	for _, item := range vectorResults {
 		chunk := item
-		chunk.Score = chunk.Score * 0.4 // 向量权重0.4
+		chunk.Score = chunk.Score * e.vectorWeight // 向量权重
 		scoreMap[chunk.ChunkID] = &chunk
 	}
 
@@ -384,8 +417,8 @@ func (e *HybridSearchEngine) mergeResults(ctx context.Context, req HybridSearchR
 	for _, item := range fullResults {
 		normalizedScore := e.normalizeScore(item.Score, maxFullScore)
 		if existing, ok := scoreMap[item.ChunkID]; ok {
-			// 融合：全文×0.6 + 向量×0.4
-			existing.Score += normalizedScore * 0.6
+			// 融合：向量×vectorWeight + 全文×fulltextWeight
+			existing.Score += normalizedScore * e.fulltextWeight
 			if existing.Highlight == "" {
 				existing.Highlight = item.Highlight
 			}
@@ -394,7 +427,7 @@ func (e *HybridSearchEngine) mergeResults(ctx context.Context, req HybridSearchR
 			}
 		} else {
 			chunk := item
-			chunk.Score = normalizedScore * 0.6 // 全文权重0.6
+			chunk.Score = normalizedScore * e.fulltextWeight // 全文权重
 			scoreMap[item.ChunkID] = &chunk
 		}
 	}
@@ -488,6 +521,18 @@ func sortMatchesByScore(matches []SearchMatch) {
 		}
 		return matches[i].Score > matches[j].Score
 	})
+}
+
+// expandWithRelatedChunks 扩展结果，添加关联块（前后各N个）
+func (e *HybridSearchEngine) expandWithRelatedChunks(ctx context.Context, results []SearchMatch) []SearchMatch {
+	if e.relatedChunkSize <= 0 || len(results) == 0 {
+		return results
+	}
+
+	// 这里需要从数据库或Redis获取关联块
+	// 由于HybridSearchEngine不直接访问数据库，这个方法需要在KnowledgeService中实现
+	// 这里提供一个占位实现，实际逻辑在KnowledgeService中
+	return results
 }
 
 // min 辅助函数

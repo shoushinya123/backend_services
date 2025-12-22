@@ -58,3 +58,15 @@ build/
 # Coverage
 coverage.html
 coverage.xml
+
+# Documents (only README.md should be committed)
+*.docx
+*.doc
+*.pdf
+IMPLEMENTATION_SUMMARY.md
+docs/
+# Ignore all .md files except essential ones
+*.md
+!README.md
+!internal/plugins/xpkg_spec.md
+!tools/plugin-pack/README.md
