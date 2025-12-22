@@ -3451,48 +3451,13 @@ git push origin v1.2.0
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
-### 许可证核心条款
-
-**允许的行为**
-- ✅ **商业使用**: 可以在商业产品中使用
-- ✅ **修改分发**: 可以修改和分发代码
-- ✅ **专利授权**: 自动获得相关专利授权
-- ✅ **私人使用**: 可以私人使用代码
-
-**强制要求**
-- ⚠️ **开源要求**: 任何衍生作品必须以GPL-3.0开源
-- ⚠️ **完整分发**: 分发时必须提供完整源代码
-- ⚠️ **版权保留**: 必须保留原始版权声明
-- ⚠️ **许可证文本**: 必须包含完整的GPL-3.0许可证文本
-
-### 许可证兼容性
-
-| 使用场景 | 兼容性 | 说明 |
-|----------|--------|------|
-| 开源项目 | ✅ | 可以集成到其他GPL项目 |
-| 商业闭源产品 | ❌ | 禁止集成到闭源商业产品 |
-| SaaS服务 | ✅ | 可以基于该代码提供云服务 |
-| 内部企业使用 | ✅ | 企业内部使用不受限制 |
-
-### 合规指南
-
-#### 开源贡献者
-1. **保持GPL许可证**: 所有贡献的代码自动采用GPL-3.0
-2. **版权声明**: 贡献的代码版权归属贡献者，但许可证为GPL-3.0
-3. **专利授权**: 贡献者自动授予专利使用权
-
-#### 商业使用者
-1. **评估影响**: 确认产品是否可以开源或保持闭源
-2. **寻求替代**: 如需闭源，可考虑其他许可证的项目
-3. **咨询法律**: 建议咨询法律顾问了解具体影响
-
 ---
 
 ## 📞 技术支持
 
 ### 联系方式
 
-- **📧 邮箱**: support@backend-services.com
+- **📧 邮箱**: shoushinya@outlook.com
 - **🐛 GitHub Issues**: [提交问题](https://github.com/shoushinya123/backend_services/issues)
 - **💬 GitHub Discussions**: [社区讨论](https://github.com/shoushinya123/backend_services/discussions)
 - **📖 文档中心**: https://docs.backend-services.com
@@ -3530,12 +3495,9 @@ git push origin v1.2.0
 
 ### 核心团队
 
-**项目发起人 & 架构师**
-- AIHub团队 - 项目创始和核心架构设计
-
-**核心开发者**
-- Backend Services开发团队 - 全栈开发和维护
-
+**项目发起人 & 架构师 & 核心开发者**
+- shoushinya - 项目创始和核心架构设计
+- 
 ### 开源生态贡献
 
 本项目基于或借鉴了以下优秀的开源项目和技术：
@@ -3574,10 +3536,6 @@ git push origin v1.2.0
 3. **LongRoPE** - Long-Context Language Modeling (2024)
 4. **Lost in the Middle** - Liu et al. (2023)
 
-### 社区贡献者
-
-感谢所有为Backend Services项目做出贡献的社区成员：
-
 - **🐛 Bug报告者**: 帮助我们发现和修复问题
 - **💡 功能建议者**: 提供宝贵的改进建议
 - **📝 文档贡献者**: 完善项目文档
@@ -3599,19 +3557,3 @@ git push origin v1.2.0
 **最后更新**: 2025-12-22  
 **版本**: v1.3.0  
 **许可证**: GPL-3.0
-
----
-
-<div align="center">
-
-# Backend Services
-
-*让AI知识库变得简单而强大* 🚀
-
----
-
-**由AIHub团队倾力打造** ❤️
-
-**采用GPL-3.0许可证开源** 📄
-
-</div>
