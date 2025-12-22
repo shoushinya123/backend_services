@@ -1892,11 +1892,98 @@ CGO_ENABLED=0 GOOS=linux go build -o plugin-service ./cmd/plugin/main.go
 - **许可证版本**: GNU General Public License v3.0
 - **许可证官网**: https://www.gnu.org/licenses/gpl-3.0.html
 
-## 🤝 贡献
+## 🤝 贡献指南
 
-欢迎提交 Issue 和 Pull Request！
+我们欢迎所有形式的贡献！无论是代码改进、文档完善、问题反馈还是功能建议。
+
+### 📋 贡献流程
+
+1. **Fork项目** 到你的GitHub账户
+2. **创建功能分支** `git checkout -b feature/your-feature-name`
+3. **提交更改** 并编写清晰的提交信息
+4. **推送分支** 并创建Pull Request
+5. **等待审核** 和合并
+
+### 📝 行为准则
+
+- **尊重他人**: 保持友好的沟通环境
+- **代码质量**: 确保代码的可读性和可维护性
+- **测试充分**: 提交前进行充分测试
+- **文档完整**: 更新相关文档
+
+### 🐛 问题反馈
+
+- **Bug报告**: [提交Issue](https://github.com/shoushinya123/backend_services/issues/new?template=bug_report.md)
+- **功能建议**: [提交Issue](https://github.com/shoushinya123/backend_services/issues/new?template=feature_request.md)
+- **问题讨论**: [GitHub Discussions](https://github.com/shoushinya123/backend_services/discussions)
 
 ---
 
-**最后更新**: 2025-12-22
+## 🙏 致谢
+
+### 核心贡献者
+
+感谢所有为Backend Services项目做出贡献的开发者：
+
+- **项目发起人**: AIHub团队
+- **核心开发者**: Backend Services开发团队
+- **开源社区**: 所有贡献者和使用者
+
+### 技术栈致谢
+
+本项目基于或使用了以下优秀的开源项目：
+
+- **[Beego](https://github.com/beego/beego)** - 高性能Go Web框架
+- **[PostgreSQL](https://www.postgresql.org/)** - 先进的开源关系型数据库
+- **[Redis](https://redis.io/)** - 高性能键值存储数据库
+- **[Elasticsearch](https://www.elastic.co/elasticsearch/)** - 分布式搜索引擎
+- **[Milvus](https://milvus.io/)** - 云原生向量数据库
+- **[MinIO](https://min.io/)** - 高性能对象存储
+- **[Kafka](https://kafka.apache.org/)** - 分布式事件流平台
+- **[Qwen](https://github.com/QwenLM/Qwen)** - 通义千问大语言模型
+
+---
+
+## 📞 技术支持
+
+### 联系方式
+
+- **📧 邮箱**: support@backend-services.com
+- **🐛 GitHub Issues**: [问题反馈](https://github.com/shoushinya123/backend_services/issues)
+- **💬 GitHub Discussions**: [社区讨论](https://github.com/shoushinya123/backend_services/discussions)
+- **📖 官方文档**: https://docs.backend-services.com
+
+### 学习资源
+
+- **📚 快速开始**: [快速开始指南](https://docs.backend-services.com/getting-started)
+- **🔧 API文档**: [完整API参考](https://api.backend-services.com)
+- **🎯 最佳实践**: [使用指南](https://docs.backend-services.com/best-practices)
+- **🛠️ 故障排查**: [问题解决](https://docs.backend-services.com/troubleshooting)
+
+---
+
+## 🎉 项目统计
+
+[![Stars](https://img.shields.io/github/stars/shoushinya123/backend_services)](https://github.com/shoushinya123/backend_services/stargazers)
+[![Forks](https://img.shields.io/github/forks/shoushinya123/backend_services)](https://github.com/shoushinya123/backend_services/network/members)
+[![Issues](https://img.shields.io/github/issues/shoushinya123/backend_services)](https://github.com/shoushinya123/backend_services/issues)
+[![Pull Requests](https://img.shields.io/github/issues-pr/shoushinya123/backend_services)](https://github.com/shoushinya123/backend_services/pulls)
+
+---
+
+**最后更新**: 2025-12-22  
+**版本**: v1.3.0  
+**许可证**: GPL-3.0
+
+---
+
+<div align="center">
+
+**Backend Services** - *让AI知识库变得简单而强大* 🚀
+
+---
+
+*Made with ❤️ by AIHub Team*
+
+</div>
 
