@@ -369,7 +369,17 @@ CGO_ENABLED=0 GOOS=linux go build -o plugin-service ./cmd/plugin/main.go
 
 ## 📄 许可证
 
-MIT License
+本项目采用 **GNU General Public License v3.0 (GPL-3.0)** 许可证。
+
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+
+**重要提醒**: GPL-3.0 是一款强传染性开源许可证。任何基于本项目代码的衍生作品都必须以 GPL-3.0 许可证开源。
+
+### 许可证详情
+
+- **许可证文件**: [LICENSE](LICENSE)
+- **许可证版本**: GNU General Public License v3.0
+- **许可证官网**: https://www.gnu.org/licenses/gpl-3.0.html
 
 ## 🤝 贡献
 
