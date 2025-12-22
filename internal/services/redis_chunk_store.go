@@ -76,6 +76,16 @@ func (r *RedisChunkStore) StoreChunk(ctx context.Context, chunk ChunkData) error
 		return nil // 如果未启用，静默返回
 	}
 
+	// 性能监控
+	pm := GetGlobalPerformanceMonitor()
+	done := pm.TimeOperation("redis_cache_store", map[string]interface{}{
+		"document_id":      chunk.DocumentID,
+		"chunk_id":        chunk.ChunkID,
+		"content_length":  len(chunk.Content),
+		"token_count":     chunk.TokenCount,
+	})
+	defer func() { done(false) }()
+
 	key := r.chunkKey(chunk.DocumentID, chunk.ChunkID)
 	
 	// 构建Hash字段
@@ -123,6 +133,7 @@ func (r *RedisChunkStore) StoreChunk(ctx context.Context, chunk ChunkData) error
 		logger.Warn("Failed to set TTL for document chunks index", zap.Error(err))
 	}
 
+	done(true) // 标记成功
 	return nil
 }
 
@@ -132,6 +143,14 @@ func (r *RedisChunkStore) GetChunk(ctx context.Context, documentID, chunkID uint
 		r.recordMiss()
 		return nil, fmt.Errorf("redis chunk store not enabled")
 	}
+
+	// 性能监控
+	pm := GetGlobalPerformanceMonitor()
+	done := pm.TimeOperation("redis_cache_get", map[string]interface{}{
+		"document_id": documentID,
+		"chunk_id":   chunkID,
+	})
+	defer func() { done(false) }()
 
 	key := r.chunkKey(documentID, chunkID)
 	data, err := r.client.HGetAll(ctx, key).Result()
@@ -184,6 +203,7 @@ func (r *RedisChunkStore) GetChunk(ctx context.Context, documentID, chunkID uint
 		json.Unmarshal([]byte(val), &chunk.Metadata)
 	}
 
+	done(true) // 标记成功
 	return chunk, nil
 }
 

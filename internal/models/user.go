@@ -4,6 +4,15 @@ import (
 	"time"
 )
 
+// 文档处理状态常量
+const (
+	DocumentStatusPending     = "pending"     // 等待处理
+	DocumentStatusProcessing  = "processing"  // 正在处理
+	DocumentStatusCompleted   = "completed"   // 处理完成
+	DocumentStatusFailed      = "failed"      // 处理失败
+	DocumentStatusCancelled   = "cancelled"   // 已取消
+)
+
 // 注意：User模型已简化，仅保留核心字段
 // 这里保留业务相关的模型定义（Order, OperationLog等）
 

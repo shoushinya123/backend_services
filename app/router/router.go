@@ -28,6 +28,7 @@ func InitKnowledgeRoutes() {
 	web.Router("/api/knowledge/:id/process-long-text", knowledgeController, "post:ProcessLongText")
 	web.Router("/api/knowledge/:id/qwen/health", knowledgeController, "get:QwenHealthCheck")
 	web.Router("/api/knowledge/:id/cache/stats", knowledgeController, "get:GetCacheStats")
+	web.Router("/api/knowledge/:id/performance/stats", knowledgeController, "get:GetPerformanceStats")
 	web.Router("/api/knowledge/:id/search", knowledgeController, "get:Search")
 	web.Router("/api/knowledge/:id/documents", knowledgeController, "get:GetDocuments")
 	web.Router("/api/knowledge/:id/documents/:doc_id", knowledgeController, "get:GetDocument")

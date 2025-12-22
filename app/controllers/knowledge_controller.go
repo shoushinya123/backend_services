@@ -357,6 +357,28 @@ func (c *KnowledgeController) GetCacheStats() {
 	c.JSONSuccess(stats)
 }
 
+// GET /api/knowledge/:id/performance/stats
+func (c *KnowledgeController) GetPerformanceStats() {
+	kbID, ok := c.mustParseUintParam(":id")
+	if !ok {
+		return
+	}
+
+	// 验证权限
+	userID, ok := c.getAuthenticatedUserID()
+	if !ok {
+		return
+	}
+
+	if _, err := c.knowledgeService.GetKnowledgeBase(uint(kbID), userID); err != nil {
+		c.JSONError(http.StatusForbidden, "知识库访问权限不足")
+		return
+	}
+
+	stats := c.knowledgeService.GetPerformanceStats()
+	c.JSONSuccess(stats)
+}
+
 // POST /api/knowledge/:id/process
 func (c *KnowledgeController) ProcessDocuments() {
 	userID, ok := c.getAuthenticatedUserID()
