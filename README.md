@@ -3460,7 +3460,7 @@ git push origin v1.2.0
 - **📧 邮箱**: shoushinya@outlook.com
 - **🐛 GitHub Issues**: [提交问题](https://github.com/shoushinya123/backend_services/issues)
 - **💬 GitHub Discussions**: [社区讨论](https://github.com/shoushinya123/backend_services/discussions)
-- **📖 文档中心**: https://docs.backend-services.com
+- **📖 文档中心**: https://docs.xiaoxiatongxue.com (构建中)
 
 ### 学习资源
 
@@ -3480,7 +3480,7 @@ git push origin v1.2.0
 | **定制开发** | ❌ | 基础定制 | 深度定制 |
 | **培训服务** | ❌ | 线上培训 | 现场培训 |
 | **SLA保证** | 95% | 99.5% | 99.9% |
-| **价格** | $99/月 | $499/月 | $999/月 |
+| **价格** | $99/月 | $699/月 | $999/月 |
 
 ### 社区资源
 
