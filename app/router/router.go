@@ -1,17 +1,21 @@
+//go:build !plugin
+// +build !plugin
+
 package router
 
 import (
 	"github.com/aihub/backend-go/app/controllers"
-	// "github.com/aihub/backend-go/app/middleware" // CORS 已移到 Envoy Gateway
+	"github.com/aihub/backend-go/app/middleware"
 	"github.com/beego/beego/v2/server/web"
 )
 
 // InitKnowledgeRoutes 初始化知识库相关路由（微服务模式）
-// +build !plugin
-
 func InitKnowledgeRoutes() {
 	web.Router("/", &controllers.RootController{}, "get:Index")
 	web.Router("/health", &controllers.HealthController{}, "get:Health")
+
+	// 安全中间件
+	web.InsertFilter("/*", web.BeforeRouter, middleware.ValidationMiddleware())
 
 	// CORS 中间件已移到 Envoy Gateway 处理
 	// web.InsertFilter("/*", web.BeforeRouter, middleware.CORSMiddleware)
@@ -33,6 +37,7 @@ func InitKnowledgeRoutes() {
 	web.Router("/api/knowledge/:id/documents", knowledgeController, "get:GetDocuments")
 	web.Router("/api/knowledge/:id/documents/:doc_id", knowledgeController, "get:GetDocument")
 	web.Router("/api/knowledge/:id/documents/:doc_id/index", knowledgeController, "post:GenerateIndex")
+	web.Router("/api/knowledge/:id/permissions", knowledgeController, "get:GetPermissions;put:UpdatePermissions")
 	web.Router("/api/knowledge/:id/sync/notion", knowledgeController, "post:SyncNotion")
 	web.Router("/api/knowledge/:id/sync/web", knowledgeController, "post:SyncWeb")
 
@@ -97,6 +102,12 @@ func Init() {
 	web.Router("/api/token/deduct", tokenController, "post:Deduct")
 	web.Router("/api/token/records", tokenController, "get:GetRecords")
 
+	// Conversation API路由
+	conversationController := &controllers.ConversationController{}
+	web.Router("/api/conversations", conversationController, "post:CreateConversation")
+	web.Router("/api/conversations/:id", conversationController, "get:GetConversation")
+	web.Router("/api/conversations/:id/messages", conversationController, "get:GetMessages;post:SendMessage")
+
 	chatController := &controllers.ChatController{}
 	web.Router("/api/chat/stream", chatController, "post:Stream")
 	web.Router("/api/chat/models", chatController, "get:GetModels")
@@ -145,8 +156,6 @@ func Init() {
 	web.Router("/api/orders/:order_id/cancel", orderController, "post:CancelOrder")
 	web.Router("/api/admin/orders", orderController, "get:GetAllOrders")
 
-	conversationController := controllers.NewConversationController()
-	web.Router("/api/admin/conversations", conversationController, "get:AdminGetConversations")
 
 	paymentController := &controllers.PaymentController{}
 	web.Router("/api/pay/:order_id", paymentController, "post:InitPayment")

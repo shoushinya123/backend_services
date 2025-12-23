@@ -17,7 +17,6 @@ type Config struct {
 	Kafka      KafkaConfig
 	Consul     ConsulConfig
 	Etcd       EtcdConfig
-	Vault      VaultConfig
 	AI         AIConfig
 	FileUpload FileUploadConfig
 	Payment    PaymentConfig
@@ -34,16 +33,10 @@ type ConsulConfig struct {
 }
 
 type EtcdConfig struct {
-	Endpoints   []string
-	Enabled     bool
-	ServiceName string
-	ServiceID   string
-}
-
-type VaultConfig struct {
-	Address string
-	Token   string
-	Enabled bool
+	Endpoints   []string // Etcd endpoints (used by Milvus)
+	Enabled     bool     // Whether etcd is enabled (used by Milvus)
+	ServiceName string   // DEPRECATED: Service registration moved to Consul
+	ServiceID   string   // DEPRECATED: Service registration moved to Consul
 }
 
 type ServerConfig struct {
@@ -242,11 +235,9 @@ func LoadConfig() error {
 	viper.SetDefault("consul.service_id", "aihub-backend-1")
 	viper.SetDefault("etcd.endpoints", []string{"http://localhost:2379"})
 	viper.SetDefault("etcd.enabled", false)
+	// DEPRECATED: Service registration moved to Consul
 	viper.SetDefault("etcd.service_name", "aihub-backend")
 	viper.SetDefault("etcd.service_id", "aihub-backend-1")
-	viper.SetDefault("vault.address", "http://localhost:8200/v1")
-	viper.SetDefault("vault.token", "root")
-	viper.SetDefault("vault.enabled", false)
 
 	// AI配置默认值
 	viper.SetDefault("ai.default_model", "gpt-4")
@@ -399,7 +390,7 @@ func LoadConfig() error {
 		viper.Set("consul.service_id", consulServiceID)
 	}
 
-	// Etcd configuration
+	// Etcd configuration (primarily for Milvus)
 	if etcdEndpoints := os.Getenv("ETCD_ENDPOINTS"); etcdEndpoints != "" {
 		// 支持逗号分隔的endpoint列表
 		endpoints := strings.Split(etcdEndpoints, ",")
@@ -411,22 +402,12 @@ func LoadConfig() error {
 	if etcdEnabled := os.Getenv("ETCD_ENABLED"); etcdEnabled == "true" {
 		viper.Set("etcd.enabled", true)
 	}
+	// DEPRECATED: Etcd service registration moved to Consul
 	if etcdServiceName := os.Getenv("ETCD_SERVICE_NAME"); etcdServiceName != "" {
 		viper.Set("etcd.service_name", etcdServiceName)
 	}
 	if etcdServiceID := os.Getenv("ETCD_SERVICE_ID"); etcdServiceID != "" {
 		viper.Set("etcd.service_id", etcdServiceID)
-	}
-
-	// Vault configuration
-	if vaultAddress := os.Getenv("VAULT_ADDRESS"); vaultAddress != "" {
-		viper.Set("vault.address", vaultAddress)
-	}
-	if vaultToken := os.Getenv("VAULT_TOKEN"); vaultToken != "" {
-		viper.Set("vault.token", vaultToken)
-	}
-	if vaultEnabled := os.Getenv("VAULT_ENABLED"); vaultEnabled == "true" {
-		viper.Set("vault.enabled", true)
 	}
 
 	// AI配置环境变量
@@ -534,11 +515,6 @@ func LoadConfig() error {
 			Enabled:     viper.GetBool("etcd.enabled"),
 			ServiceName: viper.GetString("etcd.service_name"),
 			ServiceID:   viper.GetString("etcd.service_id"),
-		},
-		Vault: VaultConfig{
-			Address: viper.GetString("vault.address"),
-			Token:   viper.GetString("vault.token"),
-			Enabled: viper.GetBool("vault.enabled"),
 		},
 		AI: AIConfig{
 			OpenAIAPIKey:    viper.GetString("ai.openai_api_key"),

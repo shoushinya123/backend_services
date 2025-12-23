@@ -176,8 +176,7 @@ services:
       - ./envoy/envoy.yaml:/etc/envoy/envoy.yaml:ro
     networks:
       - ai-xia-network
-    depends_on:
-      - etcd
+    # Note: Envoy uses STRICT_DNS, does not depend on etcd
     command: /usr/local/bin/envoy -c /etc/envoy/envoy.yaml --service-cluster envoy-gateway --service-node envoy-node
     restart: unless-stopped
     healthcheck:

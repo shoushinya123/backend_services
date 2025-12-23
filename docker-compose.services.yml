@@ -28,11 +28,12 @@ services:
       https_proxy: http://host.docker.internal:12334
       NO_PROXY: localhost,127.0.0.1,postgres,redis,elasticsearch,milvus,minio,kafka,etcd,envoy
       no_proxy: localhost,127.0.0.1,postgres,redis,elasticsearch,milvus,minio,kafka,etcd,envoy
-      # etcd 服务注册配置
-      ETCD_ENABLED: "true"
-      ETCD_ENDPOINTS: http://etcd:2379
-      ETCD_SERVICE_NAME: ai-xia-services-knowledge
-      ETCD_SERVICE_ID: ai-xia-services-knowledge-1
+      # Consul 服务注册配置
+      CONSUL_ENABLED: "true"
+      CONSUL_ADDRESS: consul:8500
+      CONSUL_CONFIG_PREFIX: aihub/config/backend
+      CONSUL_SERVICE_NAME: ai-xia-services-knowledge
+      CONSUL_SERVICE_ID: ai-xia-services-knowledge-1
       SERVICE_HOST: ai-xia-services-knowledge
     ports:
       - "8001:8001"

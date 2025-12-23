@@ -12,7 +12,7 @@ import (
 
 type KnowledgeController struct {
 	BaseController
-	knowledgeService    *services.KnowledgeService
+	knowledgeService      *services.KnowledgeService
 	modelDiscoveryService *services.ModelDiscoveryService
 }
 
@@ -87,7 +87,7 @@ func (c *KnowledgeController) Create() {
 		c.JSONError(http.StatusBadRequest, fmt.Sprintf("请求格式错误: %v", err))
 		return
 	}
-	
+
 	// 处理DashScope配置（前端可以在Config中的dashscope字段配置）
 	// Config结构示例：
 	// {
@@ -100,7 +100,7 @@ func (c *KnowledgeController) Create() {
 	if req.Config == nil {
 		req.Config = make(map[string]interface{})
 	}
-	
+
 	// 向后兼容：如果直接传递embedding_model或rerank_model字段，保存到Config中
 	var rawReq map[string]interface{}
 	if err := json.Unmarshal(body, &rawReq); err == nil {
@@ -146,7 +146,7 @@ func (c *KnowledgeController) Update() {
 		c.JSONError(http.StatusBadRequest, "请求格式错误")
 		return
 	}
-	
+
 	// 处理DashScope配置（前端可以在Config中的dashscope字段配置）
 	// Config结构示例：
 	// {
@@ -159,7 +159,7 @@ func (c *KnowledgeController) Update() {
 	if req.Config == nil {
 		req.Config = make(map[string]interface{})
 	}
-	
+
 	// 向后兼容：如果直接传递embedding_model或rerank_model字段，保存到Config中
 	var rawReq map[string]interface{}
 	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &rawReq); err == nil {
@@ -221,13 +221,13 @@ func (c *KnowledgeController) UploadDocuments() {
 	if err == nil && file != nil {
 		// 文件上传模式
 		defer file.Close()
-		
+
 		// 构建header map
 		headerMap := map[string]string{
-			"filename":    header.Filename,
+			"filename":     header.Filename,
 			"content-type": header.Header.Get("Content-Type"),
 		}
-		
+
 		document, err := c.knowledgeService.UploadFile(uint(kbID), userID, file, headerMap)
 		if err != nil {
 			log.Printf("[knowledge] UploadFile error: %v", err)
@@ -293,13 +293,13 @@ func (c *KnowledgeController) UploadBatch() {
 
 	// 批量上传
 	documents, uploadErrors := c.knowledgeService.UploadBatch(uint(kbID), userID, files)
-	
+
 	// 返回结果
 	result := map[string]interface{}{
 		"success_count": len(documents),
 		"error_count":   len(uploadErrors),
 		"documents":     documents,
-		"errors":         uploadErrors,
+		"errors":        uploadErrors,
 	}
 
 	c.JSONSuccess(result)
@@ -337,7 +337,7 @@ func (c *KnowledgeController) QwenHealthCheck() {
 
 	// 检查Qwen服务健康状态
 	healthStatus := c.knowledgeService.CheckQwenHealth()
-	
+
 	if healthStatus["status"] == "healthy" {
 		c.JSONSuccess(healthStatus)
 	} else {
@@ -509,7 +509,7 @@ func (c *KnowledgeController) getAuthenticatedUserID() (uint, bool) {
 
 // GET /api/knowledge/:id/permissions
 func (c *KnowledgeController) GetPermissions() {
-	_, ok := c.getAuthenticatedUserID()
+	userID, ok := c.getAuthenticatedUserID()
 	if !ok {
 		return
 	}
@@ -519,12 +519,10 @@ func (c *KnowledgeController) GetPermissions() {
 		return
 	}
 
-	// TODO: 实现获取权限配置的逻辑
-	permissions := map[string]interface{}{
-		"knowledge_base_id": kbID,
-		"permission_type":   "private",
-		"allowed_users":     []map[string]interface{}{},
-		"read_only_users":   []map[string]interface{}{},
+	permissions, err := c.knowledgeService.GetPermissions(uint(kbID), userID)
+	if err != nil {
+		c.JSONError(http.StatusForbidden, err.Error())
+		return
 	}
 
 	c.JSONSuccess(permissions)
@@ -532,7 +530,7 @@ func (c *KnowledgeController) GetPermissions() {
 
 // PUT /api/knowledge/:id/permissions
 func (c *KnowledgeController) UpdatePermissions() {
-	_, ok := c.getAuthenticatedUserID()
+	userID, ok := c.getAuthenticatedUserID()
 	if !ok {
 		return
 	}
@@ -548,7 +546,11 @@ func (c *KnowledgeController) UpdatePermissions() {
 		return
 	}
 
-	// TODO: 实现更新权限配置的逻辑
+	if err := c.knowledgeService.UpdatePermissions(uint(kbID), userID, req); err != nil {
+		c.JSONError(http.StatusBadRequest, err.Error())
+		return
+	}
+
 	result := map[string]interface{}{
 		"knowledge_base_id": kbID,
 		"message":           "权限配置已更新",
@@ -559,7 +561,7 @@ func (c *KnowledgeController) UpdatePermissions() {
 
 // POST /api/knowledge/:id/documents/:doc_id/index
 func (c *KnowledgeController) GenerateIndex() {
-	_, ok := c.getAuthenticatedUserID()
+	userID, ok := c.getAuthenticatedUserID()
 	if !ok {
 		return
 	}
@@ -574,12 +576,16 @@ func (c *KnowledgeController) GenerateIndex() {
 		return
 	}
 
-	// TODO: 实现生成索引的逻辑
+	if err := c.knowledgeService.GenerateIndex(uint(kbID), uint(docID), userID); err != nil {
+		c.JSONError(http.StatusBadRequest, err.Error())
+		return
+	}
+
 	result := map[string]interface{}{
 		"document_id":       docID,
 		"knowledge_base_id": kbID,
-		"status":            "processing",
-		"message":           "索引生成任务已启动",
+		"status":            "completed",
+		"message":           "索引生成完成",
 	}
 
 	c.JSONSuccess(result)
@@ -660,7 +666,7 @@ func (c *KnowledgeController) mustParseUintParam(name string) (uint64, bool) {
 // POST /api/knowledge/models/discover - 发现可用模型（根据API Key和提供商）
 func (c *KnowledgeController) DiscoverModels() {
 	log.Printf("[knowledge] DiscoverModels called - Method: %s, Path: %s", c.Ctx.Request.Method, c.Ctx.Request.URL.Path)
-	
+
 	var req struct {
 		Provider string `json:"provider"` // dashscope, openai等
 		APIKey   string `json:"api_key"`
@@ -668,7 +674,7 @@ func (c *KnowledgeController) DiscoverModels() {
 
 	body := c.Ctx.Input.RequestBody
 	log.Printf("[knowledge] DiscoverModels request body: %s", string(body))
-	
+
 	if err := json.Unmarshal(body, &req); err != nil {
 		log.Printf("[knowledge] DiscoverModels parse error: %v", err)
 		c.JSONError(http.StatusBadRequest, "请求格式错误")

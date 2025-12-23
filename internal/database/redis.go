@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/aihub/backend-go/internal/config"
 	"github.com/redis/go-redis/v9"
@@ -18,9 +19,16 @@ func InitRedis() (*redis.Client, error) {
 	}
 
 	rdb := redis.NewClient(&redis.Options{
-		Addr:     fmt.Sprintf("%s:%s", cfg.Redis.Host, cfg.Redis.Port),
-		DB:       cfg.Redis.DB,
-		Password: "", // 如果需要密码，从配置读取
+		Addr:            fmt.Sprintf("%s:%s", cfg.Redis.Host, cfg.Redis.Port),
+		DB:              cfg.Redis.DB,
+		Password:        "", // 如果需要密码，从配置读取
+		PoolSize:        20,                // 连接池大小
+		MinIdleConns:    5,                 // 最小空闲连接数
+		ConnMaxIdleTime: time.Minute * 30,  // 连接最大空闲时间
+		ConnMaxLifetime: time.Hour,         // 连接最大生命周期
+		DialTimeout:     time.Second * 5,   // 连接超时
+		ReadTimeout:     time.Second * 3,   // 读取超时
+		WriteTimeout:    time.Second * 3,   // 写入超时
 	})
 
 	// 测试连接

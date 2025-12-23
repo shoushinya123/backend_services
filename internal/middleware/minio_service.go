@@ -130,6 +130,26 @@ func GetMinIOService() *MinIOService {
 	return globalMinIOService
 }
 
+// GetClient 获取MinIO客户端
+func (s *MinIOService) GetClient() *minio.Client {
+	return s.client
+}
+
+// IsHealthy 检查 MinIO 服务是否健康
+func (s *MinIOService) IsHealthy() bool {
+	return s != nil && s.client != nil
+}
+
+// HealthCheck 执行健康检查
+func (s *MinIOService) HealthCheck() error {
+	if !s.IsHealthy() {
+		return fmt.Errorf("MinIO client not initialized")
+	}
+	ctx := context.Background()
+	_, err := s.client.ListBuckets(ctx)
+	return err
+}
+
 // UploadFile 上传文件
 func (s *MinIOService) UploadFile(bucket, objectKey string, file io.Reader, size int64, contentType string) error {
 	if s.client == nil {

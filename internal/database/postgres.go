@@ -3,6 +3,7 @@ package database
 import (
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/aihub/backend-go/internal/config"
 	"github.com/aihub/backend-go/internal/models"
@@ -32,8 +33,11 @@ func InitDB() (*gorm.DB, error) {
 		return nil, fmt.Errorf("failed to get sql.DB: %w", err)
 	}
 
-	sqlDB.SetMaxIdleConns(10)
-	sqlDB.SetMaxOpenConns(100)
+	// 优化连接池配置
+	sqlDB.SetMaxIdleConns(10)           // 最大空闲连接数
+	sqlDB.SetMaxOpenConns(100)          // 最大打开连接数
+	sqlDB.SetConnMaxLifetime(time.Hour) // 连接最大生命周期
+	sqlDB.SetConnMaxIdleTime(time.Minute * 30) // 空闲连接最大时间
 
 	// 自动迁移知识库相关表
 	if err := autoMigrate(db); err != nil {
@@ -63,10 +67,23 @@ func autoMigrate(db *gorm.DB) error {
 	}
 	
 	// 使用 AutoMigrate 创建表，GORM 会自动处理外键约束
-	// 1. 先创建主表
+	// 1. 先创建对话相关表
+	if err := db.AutoMigrate(&models.Conversation{}); err != nil {
+		log.Printf("⚠️  Failed to migrate conversations: %v", err)
+	}
+	if err := db.AutoMigrate(&models.ConversationMessage{}); err != nil {
+		log.Printf("⚠️  Failed to migrate conversation_messages: %v", err)
+	}
+
+	// 2. 创建知识库相关表
 	if err := db.AutoMigrate(&models.KnowledgeBase{}); err != nil {
 		log.Printf("⚠️  Failed to migrate knowledge_bases: %v", err)
-		// 继续执行，可能表已存在
+	}
+	if err := db.AutoMigrate(&models.KnowledgeDocument{}); err != nil {
+		log.Printf("⚠️  Failed to migrate knowledge_documents: %v", err)
+	}
+	if err := db.AutoMigrate(&models.KnowledgeChunk{}); err != nil {
+		log.Printf("⚠️  Failed to migrate knowledge_chunks: %v", err)
 	}
 	
 	// 2. 创建文档表（临时禁用外键检查）

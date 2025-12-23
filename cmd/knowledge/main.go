@@ -48,6 +48,9 @@ func main() {
 	}
 	defer app.Shutdown()
 
+	// Set global app instance for controllers
+	bootstrap.SetGlobalApp(app)
+
 	// 初始化路由（仅知识库相关）
 	router.InitKnowledgeRoutes()
 

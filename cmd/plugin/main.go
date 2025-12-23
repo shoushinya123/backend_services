@@ -43,6 +43,9 @@ func main() {
 	}
 	defer app.Shutdown()
 
+	// Set global app instance for controllers
+	bootstrap.SetGlobalApp(app)
+
 	// 初始化插件管理器
 	cfg := plugins.ManagerConfig{
 		PluginDir:    "./tmp/plugins",

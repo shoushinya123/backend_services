@@ -6,28 +6,48 @@ import (
 
 	"github.com/aihub/backend-go/internal/config"
 	"github.com/aihub/backend-go/internal/consul"
-	"github.com/aihub/backend-go/internal/etcd"
+	"github.com/aihub/backend-go/internal/dashscope"
 	"github.com/aihub/backend-go/internal/database"
 	"github.com/aihub/backend-go/internal/kafka"
 	"github.com/aihub/backend-go/internal/logger"
+	"github.com/aihub/backend-go/internal/middleware"
 	"github.com/aihub/backend-go/internal/services"
 	"github.com/aihub/backend-go/internal/storage"
-	"github.com/aihub/backend-go/internal/vault"
 	"github.com/joho/godotenv"
 	"go.uber.org/zap"
 )
 
 // App encapsulates lifecycle resources that need to be cleaned up on shutdown.
 type App struct {
-	cleanupTasks    []func() error
-	consulClient    *consul.Client
-	etcdClient      *etcd.Client
-	serviceRegistry interface{} // Can be consul.ServiceRegistry or etcd.ServiceRegistry
+	cleanupTasks         []func() error
+	consulClient         *consul.Client
+	consulService        *services.ConsulService
+	elasticsearchService *middleware.ElasticsearchService
+	milvusService        *middleware.MilvusService
+	serviceRegistry      *consul.ServiceRegistry // Use Consul for service registration
 }
 
 // GetConsulClient returns the Consul client instance
 func (a *App) GetConsulClient() *consul.Client {
 	return a.consulClient
+}
+
+// GetConsulService returns the Consul service instance
+func (a *App) GetConsulService() *services.ConsulService {
+	return a.consulService
+}
+
+// Global app instance for controllers to access
+var globalApp *App
+
+// GetApp returns the global app instance
+func GetApp() *App {
+	return globalApp
+}
+
+// SetGlobalApp sets the global app instance
+func SetGlobalApp(app *App) {
+	globalApp = app
 }
 
 // Init bootstraps configuration, logger, database connections and other shared
@@ -50,6 +70,9 @@ func Init() (*App, error) {
 
 	app := &App{}
 
+	// Initialize Consul service
+	app.consulService = services.NewConsulService()
+
 	// Initialize Consul client (optional)
 	if config.AppConfig.Consul.Enabled {
 		consulClient, err := consul.NewClient(
@@ -61,6 +84,11 @@ func Init() (*App, error) {
 			logger.Warn("Failed to initialize Consul client, using fallback config", zap.Error(err))
 		} else {
 			app.consulClient = consulClient
+
+			// Set Consul client to service
+			if consulClient.IsEnabled() && consulClient.GetAPIClient() != nil {
+				app.consulService.SetClient(consulClient.GetAPIClient())
+			}
 
 			// Try to load config from Consul
 			if consulClient.IsEnabled() {
@@ -120,10 +148,24 @@ func Init() (*App, error) {
 		logger.Warn("Failed to initialize MinIO", zap.Error(err))
 	}
 
-	// Initialize Vault (optional). Failure shouldn't block the app.
-	if _, err := vault.NewClient(); err != nil {
-		logger.Warn("Failed to initialize Vault", zap.Error(err))
+	// Initialize Elasticsearch (optional). Failure shouldn't block the app.
+	if esService, err := middleware.NewElasticsearchService(); err != nil {
+		logger.Warn("Failed to initialize Elasticsearch", zap.Error(err))
+	} else {
+		logger.Info("Elasticsearch initialized successfully")
+		app.elasticsearchService = esService
 	}
+
+	// Initialize Milvus (optional). Failure shouldn't block the app.
+	if milvusService, err := middleware.NewMilvusService(); err != nil {
+		logger.Warn("Failed to initialize Milvus", zap.Error(err))
+	} else {
+		logger.Info("Milvus initialized successfully")
+		app.milvusService = milvusService
+	}
+
+	// Note: Component health checks are managed by Consul, not MiddlewareManager
+	// Consul provides service discovery and health monitoring for all registered services
 
 	// Initialize Kafka (optional). Failure shouldn't block the app.
 	if config.AppConfig.Kafka.Enabled {
@@ -154,52 +196,37 @@ func Init() (*App, error) {
 		}
 	}
 
-	// Register service with etcd (preferred) or Consul
-	if config.AppConfig.Etcd.Enabled {
-		// Use etcd for service registration
-		etcdClient, err := etcd.NewClient(
-			config.AppConfig.Etcd.Endpoints,
-			config.AppConfig.Etcd.Enabled,
-			logger.Logger,
-		)
-		if err != nil {
-			logger.Warn("Failed to initialize etcd client", zap.Error(err))
-		} else if etcdClient.IsEnabled() {
-			app.etcdClient = etcdClient
-			serviceRegistry := etcd.NewServiceRegistry(
-				etcdClient,
-				config.AppConfig.Etcd.ServiceID,
-				config.AppConfig.Etcd.ServiceName,
+	// Register service with Consul
+	if config.AppConfig.Consul.Enabled {
+		if app.consulClient == nil || !app.consulClient.IsEnabled() {
+			logger.Warn("Consul client not available, skipping service registration")
+		} else {
+			serviceRegistry := consul.NewServiceRegistry(
+				app.consulClient,
+				config.AppConfig.Consul.ServiceID,
+				config.AppConfig.Consul.ServiceName,
 				logger.Logger,
 			)
 			if err := serviceRegistry.Register(config.AppConfig); err != nil {
-				logger.Warn("Failed to register service with etcd", zap.Error(err))
+				logger.Warn("Failed to register service with Consul", zap.Error(err))
 			} else {
 				app.serviceRegistry = serviceRegistry
 				app.cleanupTasks = append(app.cleanupTasks, func() error {
 					return serviceRegistry.Deregister()
 				})
-				app.cleanupTasks = append(app.cleanupTasks, func() error {
-					return etcdClient.Close()
-				})
+				logger.Info("Service registered with Consul",
+					zap.String("service_id", config.AppConfig.Consul.ServiceID),
+					zap.String("service_name", config.AppConfig.Consul.ServiceName))
 			}
 		}
-	} else if config.AppConfig.Consul.Enabled && app.consulClient != nil && app.consulClient.IsEnabled() {
-		// Fallback to Consul if etcd is not enabled
-		serviceRegistry := consul.NewServiceRegistry(
-			app.consulClient,
-			config.AppConfig.Consul.ServiceID,
-			config.AppConfig.Consul.ServiceName,
-			logger.Logger,
-		)
-		if err := serviceRegistry.Register(config.AppConfig); err != nil {
-			logger.Warn("Failed to register service with Consul", zap.Error(err))
-		} else {
-			app.serviceRegistry = serviceRegistry
-			app.cleanupTasks = append(app.cleanupTasks, func() error {
-				return serviceRegistry.Deregister()
-			})
-		}
+	}
+
+	// 初始化全局DashScope服务
+	if apiKey := config.AppConfig.AI.DashScopeAPIKey; apiKey != "" {
+		dashscope.InitGlobalService(apiKey)
+		logger.Info("Global DashScope service initialized")
+	} else {
+		logger.Warn("DashScope API key not configured, AI services will not be available")
 	}
 
 	// 检查Qwen服务健康状态（如果启用）

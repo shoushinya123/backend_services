@@ -76,6 +76,10 @@ func (r *RedisChunkStore) StoreChunk(ctx context.Context, chunk ChunkData) error
 		return nil // 如果未启用，静默返回
 	}
 
+	// 设置超时上下文 (3秒)
+	ctx, cancel := context.WithTimeout(ctx, time.Second*3)
+	defer cancel()
+
 	// 性能监控
 	pm := GetGlobalPerformanceMonitor()
 	done := pm.TimeOperation("redis_cache_store", map[string]interface{}{
@@ -143,6 +147,10 @@ func (r *RedisChunkStore) GetChunk(ctx context.Context, documentID, chunkID uint
 		r.recordMiss()
 		return nil, fmt.Errorf("redis chunk store not enabled")
 	}
+
+	// 设置超时上下文 (3秒)
+	ctx, cancel := context.WithTimeout(ctx, time.Second*3)
+	defer cancel()
 
 	// 性能监控
 	pm := GetGlobalPerformanceMonitor()

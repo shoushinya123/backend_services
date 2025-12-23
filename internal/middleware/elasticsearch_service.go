@@ -71,6 +71,24 @@ func GetElasticsearchService() *ElasticsearchService {
 	return globalElasticsearchService
 }
 
+// IsHealthy 检查 Elasticsearch 服务是否健康
+func (s *ElasticsearchService) IsHealthy() bool {
+	return s != nil && s.client != nil
+}
+
+// HealthCheck 执行健康检查
+func (s *ElasticsearchService) HealthCheck() error {
+	if !s.IsHealthy() {
+		return fmt.Errorf("Elasticsearch client not initialized")
+	}
+	resp, err := s.client.Info()
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	return nil
+}
+
 // IndexDocument 索引文档
 func (s *ElasticsearchService) IndexDocument(index string, id string, doc interface{}) error {
 	if s.client == nil {

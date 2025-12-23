@@ -51,6 +51,11 @@ func (c *Client) IsEnabled() bool {
 	return c.enabled && c.apiClient != nil
 }
 
+// GetAPIClient returns the underlying Consul API client
+func (c *Client) GetAPIClient() *api.Client {
+	return c.apiClient
+}
+
 // GetKV retrieves a value from Consul KV store
 func (c *Client) GetKV(key string) (string, error) {
 	if !c.IsEnabled() {

@@ -1,4 +1,4 @@
-package services
+package dashscope
 
 import (
 	"bytes"
@@ -15,8 +15,8 @@ import (
 	"go.uber.org/zap"
 )
 
-// DashScopeService 统一的DashScope服务，支持LLM、Embedding、Rerank
-type DashScopeService struct {
+// Service 统一的DashScope服务，支持LLM、Embedding、Rerank
+type Service struct {
 	apiKey  string
 	baseURL string
 	client  *http.Client
@@ -106,22 +106,22 @@ type RerankResponse struct {
 	RequestID string `json:"request_id"`
 }
 
-// DashScopeError DashScope API错误
-type DashScopeError struct {
+// Error DashScope API错误
+type Error struct {
 	Code      string `json:"code"`
 	Message   string `json:"message"`
 	RequestID string `json:"request_id"`
 }
 
-// NewDashScopeService 创建DashScope服务
-func NewDashScopeService(apiKey string) *DashScopeService {
+// NewService 创建DashScope服务
+func NewService(apiKey string) *Service {
 	apiKey = strings.TrimSpace(apiKey)
 	if apiKey == "" {
 		logger.Logger.Warn("DashScope API key is empty")
 		return nil
 	}
 
-	return &DashScopeService{
+	return &Service{
 		apiKey:  apiKey,
 		baseURL: "https://dashscope.aliyuncs.com",
 		client: &http.Client{
@@ -131,7 +131,7 @@ func NewDashScopeService(apiKey string) *DashScopeService {
 }
 
 // ChatCompletion 调用LLM聊天接口
-func (s *DashScopeService) ChatCompletion(ctx context.Context, req ChatRequest) (*ChatResponse, error) {
+func (s *Service) ChatCompletion(ctx context.Context, req ChatRequest) (*ChatResponse, error) {
 	if s == nil || s.client == nil {
 		return nil, fmt.Errorf("DashScope service not initialized")
 	}
@@ -171,7 +171,7 @@ func (s *DashScopeService) ChatCompletion(ctx context.Context, req ChatRequest) 
 
 	// 检查HTTP状态码
 	if resp.StatusCode != http.StatusOK {
-		var errorResp DashScopeError
+		var errorResp Error
 		if err := json.Unmarshal(body, &errorResp); err == nil {
 			return nil, fmt.Errorf("DashScope API错误: %s (code: %s, request_id: %s)",
 				errorResp.Message, errorResp.Code, errorResp.RequestID)
@@ -194,7 +194,7 @@ func (s *DashScopeService) ChatCompletion(ctx context.Context, req ChatRequest) 
 }
 
 // CreateEmbeddings 调用向量化接口
-func (s *DashScopeService) CreateEmbeddings(ctx context.Context, req EmbeddingRequest) (*EmbeddingResponse, error) {
+func (s *Service) CreateEmbeddings(ctx context.Context, req EmbeddingRequest) (*EmbeddingResponse, error) {
 	if s == nil || s.client == nil {
 		return nil, fmt.Errorf("DashScope service not initialized")
 	}
@@ -234,7 +234,7 @@ func (s *DashScopeService) CreateEmbeddings(ctx context.Context, req EmbeddingRe
 
 	// 检查HTTP状态码
 	if resp.StatusCode != http.StatusOK {
-		var errorResp DashScopeError
+		var errorResp Error
 		if err := json.Unmarshal(body, &errorResp); err == nil {
 			return nil, fmt.Errorf("DashScope API错误: %s (code: %s, request_id: %s)",
 				errorResp.Message, errorResp.Code, errorResp.RequestID)
@@ -257,7 +257,7 @@ func (s *DashScopeService) CreateEmbeddings(ctx context.Context, req EmbeddingRe
 }
 
 // CreateRerank 调用重排序接口
-func (s *DashScopeService) CreateRerank(ctx context.Context, req RerankRequest) (*RerankResponse, error) {
+func (s *Service) CreateRerank(ctx context.Context, req RerankRequest) (*RerankResponse, error) {
 	if s == nil || s.client == nil {
 		return nil, fmt.Errorf("DashScope service not initialized")
 	}
@@ -297,7 +297,7 @@ func (s *DashScopeService) CreateRerank(ctx context.Context, req RerankRequest) 
 
 	// 检查HTTP状态码
 	if resp.StatusCode != http.StatusOK {
-		var errorResp DashScopeError
+		var errorResp Error
 		if err := json.Unmarshal(body, &errorResp); err == nil {
 			return nil, fmt.Errorf("DashScope API错误: %s (code: %s, request_id: %s)",
 				errorResp.Message, errorResp.Code, errorResp.RequestID)
@@ -320,32 +320,6 @@ func (s *DashScopeService) CreateRerank(ctx context.Context, req RerankRequest) 
 }
 
 // Ready 检查服务是否就绪
-func (s *DashScopeService) Ready() bool {
+func (s *Service) Ready() bool {
 	return s != nil && s.client != nil && s.apiKey != ""
-}
-
-// 全局DashScope服务实例
-var globalDashScopeService *DashScopeService
-
-// InitGlobalDashScopeService 初始化全局DashScope服务
-func InitGlobalDashScopeService(apiKey string) {
-	if apiKey == "" {
-		logger.Logger.Warn("DashScope API key is empty, service not initialized")
-		return
-	}
-
-	globalDashScopeService = NewDashScopeService(apiKey)
-	if globalDashScopeService != nil {
-		logger.Logger.Info("Global DashScope service initialized")
-	}
-}
-
-// GetGlobalDashScopeService 获取全局DashScope服务实例
-func GetGlobalDashScopeService() *DashScopeService {
-	return globalDashScopeService
-}
-
-// IsGlobalDashScopeServiceReady 检查全局服务是否就绪
-func IsGlobalDashScopeServiceReady() bool {
-	return globalDashScopeService != nil && globalDashScopeService.Ready()
 }

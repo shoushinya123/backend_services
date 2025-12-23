@@ -49,6 +49,8 @@ temp/
 # Build artifacts
 dist/
 build/
+knowledge
+plugin
 
 # Database
 *.db
