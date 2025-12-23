@@ -121,3 +121,4 @@ func TestConfigLoader_Validation(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "validation failed")
 }
+

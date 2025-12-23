@@ -21,3 +21,4 @@ func GetGlobalService() *Service {
 func IsGlobalServiceReady() bool {
 	return globalService != nil && globalService.Ready()
 }
+

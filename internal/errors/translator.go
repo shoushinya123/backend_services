@@ -194,3 +194,4 @@ func (t *ErrorTranslator) WrapBusiness(err error, code ErrorCode, message string
 	appErr := NewBusinessError(code, message).WithCause(err)
 	return appErr
 }
+

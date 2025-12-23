@@ -194,3 +194,4 @@ type RequestInfo struct {
 	Duration   time.Duration
 	StatusCode int
 }
+

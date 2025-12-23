@@ -191,3 +191,4 @@ func GetAppError(err error) *AppError {
 
 	return NewSystemError(ErrCodeInternalServer, "Internal server error").WithCause(err)
 }
+

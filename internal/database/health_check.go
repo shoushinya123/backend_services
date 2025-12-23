@@ -225,3 +225,4 @@ func (hc *HealthChecker) WaitForHealthy(ctx context.Context, timeout time.Durati
 		}
 	}
 }
+

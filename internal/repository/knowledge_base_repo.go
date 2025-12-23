@@ -80,3 +80,4 @@ func (r *knowledgeBaseRepository) Delete(ctx context.Context, id uint, userID ui
 	return r.db.WithContext(ctx).Where("knowledge_base_id = ? AND owner_id = ?", id, userID).
 		Delete(&models.KnowledgeBase{}).Error
 }
+

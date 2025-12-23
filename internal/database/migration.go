@@ -158,3 +158,4 @@ func CreateMigrationFile(migrationPath, name string) error {
 	// 使用migrate create命令或者手动创建
 	return fmt.Errorf("CreateMigrationFile not implemented yet")
 }
+

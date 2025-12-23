@@ -23,3 +23,4 @@ func (ms *MetricsService) Handler() http.Handler {
 func (ms *MetricsService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ms.Handler().ServeHTTP(w, r)
 }
+

@@ -108,3 +108,4 @@ DROP TABLE IF EXISTS test_migration;`
 	require.NoError(t, err)
 	assert.False(t, exists)
 }
+

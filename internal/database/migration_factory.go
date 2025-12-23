@@ -40,3 +40,4 @@ func (f *MigrationManagerFactory) CreateManager(db *sql.DB) (*MigrationManager, 
 func (f *MigrationManagerFactory) GetMigrationPath() string {
 	return f.migrationPath
 }
+

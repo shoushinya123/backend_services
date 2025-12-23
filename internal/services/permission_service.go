@@ -113,3 +113,4 @@ func (s *PermissionService) ValidateAccess(kbID, userID uint, action string) err
 
 	return fmt.Errorf("access denied for action: %s", action)
 }
+

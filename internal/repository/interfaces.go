@@ -38,3 +38,4 @@ type ChunkRepository interface {
 	GetByDocumentID(ctx context.Context, docID uint) ([]interface{}, error)
 	DeleteByDocumentID(ctx context.Context, docID uint) error
 }
+

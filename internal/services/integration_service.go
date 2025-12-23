@@ -110,3 +110,4 @@ func (s *IntegrationService) CheckQwenHealth() map[string]interface{} {
 		"uptime":  "1h 30m",
 	}
 }
+

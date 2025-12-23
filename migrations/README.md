@@ -99,3 +99,4 @@ If you encounter migration conflicts:
 The migration system is designed to be separate from application startup. Migrations should be run manually or as part of your deployment pipeline, not automatically during application startup.
 
 This approach provides better control and prevents accidental schema changes in production environments.
+

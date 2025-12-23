@@ -149,3 +149,4 @@ func (mc *MetricsCollector) RecordMigration(operation string, duration time.Dura
 func (mc *MetricsCollector) GetStats() sql.DBStats {
 	return mc.db.Stats()
 }
+

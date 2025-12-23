@@ -75,3 +75,4 @@ func TestDefaultConnectionPoolValues(t *testing.T) {
 
 // 注意：实际的数据库连接测试需要在有真实数据库的环境中运行
 // 例如使用testcontainers或GitHub Actions中的PostgreSQL服务
+

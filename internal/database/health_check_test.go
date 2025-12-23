@@ -172,3 +172,4 @@ func TestHealthChecker_WaitForHealthy(t *testing.T) {
 	// 验证mock期望
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
+

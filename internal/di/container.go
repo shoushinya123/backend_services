@@ -27,3 +27,4 @@ func Invoke(function interface{}, opts ...dig.InvokeOption) error {
 func Provide(constructor interface{}, opts ...dig.ProvideOption) error {
 	return Container.Provide(constructor, opts...)
 }
+

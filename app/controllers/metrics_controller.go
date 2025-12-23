@@ -26,3 +26,4 @@ func (c *MetricsController) Metrics() {
 	// 使用指标服务的处理器
 	c.metricsService.ServeHTTP(c.Ctx.ResponseWriter, c.Ctx.Request)
 }
+

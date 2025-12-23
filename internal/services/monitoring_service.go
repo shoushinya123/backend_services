@@ -520,3 +520,4 @@ func (ms *MonitoringService) Alert() []string {
 
 	return alerts
 }
+
