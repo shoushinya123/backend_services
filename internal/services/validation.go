@@ -193,13 +193,9 @@ func ValidateKnowledgeBaseRequest(req CreateKnowledgeBaseRequest) error {
 		v.MaxLength("description", req.Description, 500)
 	}
 
-	if req.EmbeddingModel != "" {
-		v.MaxLength("embedding_model", req.EmbeddingModel, 100)
-	}
+	// EmbeddingModel validation removed - field not in request struct
 
-	if req.RerankModel != "" {
-		v.MaxLength("rerank_model", req.RerankModel, 100)
-	}
+	// RerankModel validation removed - field not in request struct
 
 	return v.Error()
 }
@@ -208,23 +204,19 @@ func ValidateKnowledgeBaseRequest(req CreateKnowledgeBaseRequest) error {
 func ValidateKnowledgeBaseUpdateRequest(req UpdateKnowledgeBaseRequest) error {
 	v := NewValidator()
 
-	if req.Name != "" {
-		v.Required("name", req.Name)
-		v.MaxLength("name", req.Name, 100)
-		v.MinLength("name", req.Name, 1)
+	if req.Name != nil {
+		v.Required("name", *req.Name)
+		v.MaxLength("name", *req.Name, 100)
+		v.MinLength("name", *req.Name, 1)
 	}
 
-	if req.Description != "" {
-		v.MaxLength("description", req.Description, 500)
+	if req.Description != nil {
+		v.MaxLength("description", *req.Description, 500)
 	}
 
-	if req.EmbeddingModel != "" {
-		v.MaxLength("embedding_model", req.EmbeddingModel, 100)
-	}
+	// EmbeddingModel validation removed - field not in request struct
 
-	if req.RerankModel != "" {
-		v.MaxLength("rerank_model", req.RerankModel, 100)
-	}
+	// RerankModel validation removed - field not in request struct
 
 	return v.Error()
 }
@@ -254,19 +246,166 @@ func ValidateDocumentUpload(fileName string, fileSize int64) error {
 		v.AddError("fileSize", "file size cannot exceed 100MB")
 	}
 
-	// 检查文件扩展名
-	allowedExts := []string{".pdf", ".doc", ".docx", ".txt", ".md", ".html", ".csv", ".json", ".xml"}
-	fileExt := strings.ToLower(fileName[strings.LastIndex(fileName, "."):])
-	allowed := false
-	for _, ext := range allowedExts {
-		if fileExt == ext {
-			allowed = true
-			break
-		}
+	// 检查文件大小下限 (最小1字节)
+	if fileSize <= 0 {
+		v.AddError("fileSize", "file size must be greater than 0")
 	}
-	if !allowed {
-		v.AddError("fileName", "file type not supported")
+
+	// 检查文件扩展名和MIME类型安全
+	if err := validateFileSecurity(fileName, fileSize); err != nil {
+		v.AddError("fileName", err.Error())
 	}
 
 	return v.Error()
+}
+
+// validateFileSecurity 验证文件安全性
+func validateFileSecurity(fileName string, fileSize int64) error {
+	// 检查文件名安全性
+	if strings.Contains(fileName, "..") || strings.Contains(fileName, "/") || strings.Contains(fileName, "\\") {
+		return fmt.Errorf("invalid filename: contains path traversal characters")
+	}
+
+	// 检查文件扩展名
+	fileExt := strings.ToLower(strings.TrimSpace(fileName[strings.LastIndex(fileName, "."):]))
+
+	// 定义允许的文件类型和MIME类型映射
+	allowedTypes := map[string][]string{
+		".pdf":  {"application/pdf"},
+		".doc":  {"application/msword"},
+		".docx": {"application/vnd.openxmlformats-officedocument.wordprocessingml.document"},
+		".txt":  {"text/plain", "text/plain; charset=utf-8"},
+		".md":   {"text/markdown", "text/plain"},
+		".html": {"text/html", "text/html; charset=utf-8"},
+		".csv":  {"text/csv", "application/csv", "text/plain"},
+		".json": {"application/json", "text/json"},
+		".xml":  {"application/xml", "text/xml"},
+	}
+
+	_, allowed := allowedTypes[fileExt]
+	if !allowed {
+		return fmt.Errorf("file type not supported: %s", fileExt)
+	}
+
+	// 检查文件大小是否合理
+	minSizes := map[string]int64{
+		".pdf":  100,  // PDF文件最小100字节
+		".doc":  100,  // DOC文件最小100字节
+		".docx": 1000, // DOCX文件最小1KB
+		".txt":  1,    // TXT文件最小1字节
+		".md":   1,    // MD文件最小1字节
+		".html": 10,   // HTML文件最小10字节
+		".csv":  1,    // CSV文件最小1字节
+		".json": 2,    // JSON文件最小2字节 (如 {})
+		".xml":  5,    // XML文件最小5字节
+	}
+
+	if minSize, exists := minSizes[fileExt]; exists && fileSize < minSize {
+		return fmt.Errorf("file size too small for %s file", fileExt)
+	}
+
+	return nil
+}
+
+// ValidateSearchQuery 验证搜索查询的安全性
+func ValidateSearchQuery(query string) error {
+	v := NewValidator()
+
+	v.Required("query", query)
+	v.MaxLength("query", query, 1000)
+	v.MinLength("query", query, 1)
+
+	// 检查查询是否包含危险字符
+	if containsDangerousChars(query) {
+		v.AddError("query", "query contains dangerous characters")
+	}
+
+	// 检查查询长度是否合理
+	wordCount := len(strings.Fields(query))
+	if wordCount > 50 {
+		v.AddError("query", "query contains too many words")
+	}
+
+	return v.Error()
+}
+
+// containsDangerousChars 检查是否包含危险字符
+func containsDangerousChars(s string) bool {
+	dangerousChars := []string{
+		"<script", "</script>", "javascript:", "vbscript:",
+		"onload=", "onerror=", "onclick=", "eval(",
+		"union select", "drop table", "delete from",
+		"insert into", "update ", "alter table",
+		"exec(", "execute(", "system(", "shell_exec(",
+		"../", "..\\", "\\..", "/..",
+	}
+
+	s = strings.ToLower(s)
+	for _, char := range dangerousChars {
+		if strings.Contains(s, char) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// ValidateKnowledgeBaseID 验证知识库ID
+func ValidateKnowledgeBaseID(id uint) error {
+	v := NewValidator()
+
+	if id == 0 {
+		v.AddError("id", "knowledge base ID cannot be zero")
+	}
+
+	return v.Error()
+}
+
+// ValidateUserID 验证用户ID
+func ValidateUserID(id uint) error {
+	v := NewValidator()
+
+	if id == 0 {
+		v.AddError("userId", "user ID cannot be zero")
+	}
+
+	return v.Error()
+}
+
+// ValidatePaginationParams 验证分页参数
+func ValidatePaginationParams(page, pageSize int) error {
+	v := NewValidator()
+
+	v.Range("page", page, 1, 10000)
+	v.Range("pageSize", pageSize, 1, 100)
+
+	return v.Error()
+}
+
+// ValidateEmbeddingRequest 验证向量化请求
+func ValidateEmbeddingRequest(text string) error {
+	v := NewValidator()
+
+	v.Required("text", text)
+	v.MaxLength("text", text, 10000) // 最大10000字符
+
+	// 检查文本是否包含过多特殊字符
+	specialCharRatio := countSpecialChars(text) / float64(len(text))
+	if specialCharRatio > 0.5 {
+		v.AddError("text", "text contains too many special characters")
+	}
+
+	return v.Error()
+}
+
+// countSpecialChars 计算特殊字符数量
+func countSpecialChars(s string) float64 {
+	specialChars := "!@#$%^&*()_+-=[]{}|;:,.<>?"
+	count := 0
+	for _, char := range s {
+		if strings.ContainsRune(specialChars, char) {
+			count++
+		}
+	}
+	return float64(count)
 }

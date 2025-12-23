@@ -15,7 +15,6 @@ type DashScopeReranker struct {
 	model   string
 }
 
-
 // NewDashScopeReranker 创建DashScope重排序器
 func NewDashScopeReranker(apiKey, model string) Reranker {
 	// 使用全局DashScope服务
@@ -115,4 +114,3 @@ func sortRerankResults(results []RerankResult) {
 		}
 	}
 }
-

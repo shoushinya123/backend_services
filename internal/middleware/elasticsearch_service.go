@@ -27,7 +27,7 @@ func NewElasticsearchService() (*ElasticsearchService, error) {
 		return globalElasticsearchService, nil
 	}
 
-	cfg := config.AppConfig.Knowledge.Search.Elasticsearch
+	cfg := config.GetAppConfig().Knowledge.Search.Elasticsearch
 	if len(cfg.Addresses) == 0 {
 		return nil, fmt.Errorf("elasticsearch addresses not configured")
 	}

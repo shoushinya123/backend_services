@@ -37,7 +37,7 @@ func LoadConfigFromConsul(client *Client, prefix string, logger *zap.Logger) (*c
 		return nil, fmt.Errorf("Consul is not enabled")
 	}
 
-	cfg := &config.Config{}
+	cfg := config.GetAppConfig()
 
 	// Load server config
 	cfg.Server.Port = client.GetKVWithDefault(prefix+"/server/port", "8000")

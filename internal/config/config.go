@@ -1,12 +1,100 @@
 package config
 
 import (
-	"fmt"
-	"os"
-	"strings"
+	"sync"
+	"time"
 
-	"github.com/spf13/viper"
+	"github.com/aihub/backend-go/internal/config/v2"
 )
+
+// GetAppConfig 获取应用配置（兼容旧代码）
+var globalConfig *v2.ConfigV2
+var globalOldConfig *Config
+var configOnce sync.Once
+
+func GetAppConfig() *Config {
+	// 为了兼容性，这里返回一个包装了v2配置的对象
+	// 但实际上应该逐步迁移所有代码使用v2配置
+	configOnce.Do(func() {
+		loader := v2.NewConfigLoader()
+		cfg, err := loader.Load()
+		if err != nil {
+			panic("Failed to load config: " + err.Error())
+		}
+		globalConfig = cfg
+
+		// 创建兼容的配置对象
+		globalOldConfig = &Config{
+			Server: ServerConfig{
+				Port: globalConfig.Server.Port,
+				Env:  globalConfig.Server.Env,
+			},
+			Database: DatabaseConfig{
+				URL: globalConfig.Database.URL,
+			},
+			Redis: RedisConfig{
+				Host: globalConfig.Cache.Host,
+				Port: globalConfig.Cache.Port,
+			},
+			JWT: JWTConfig{
+				Secret: globalConfig.Auth.Secret,
+			},
+			Prometheus: PrometheusConfig{
+				BaseURL: "http://localhost:9090", // 默认值
+				Enabled: true,
+			},
+			Kafka: KafkaConfig{
+				Brokers: []string{"localhost:9092"}, // 默认值
+				Topic:   "knowledge-events",         // 默认值
+				GroupID: "knowledge-service",        // 默认值
+				Enabled: false,
+			},
+			Consul: ConsulConfig{
+				Address:      "localhost:8500", // 默认值
+				Enabled:      false,
+				ConfigPrefix: "knowledge",      // 默认值
+				ServiceName:  "knowledge-service",
+				ServiceID:    "knowledge-1",
+			},
+			Etcd: EtcdConfig{
+				Endpoints:   []string{"localhost:2379"}, // 默认值
+				Enabled:     false,
+				ServiceName: "knowledge-service",
+				ServiceID:   "knowledge-1",
+			},
+			AI: AIConfig{
+				DashScopeAPIKey: globalConfig.AI.DashScopeAPIKey,
+				DefaultModel:    "qwen-turbo",
+				MaxTokens:       2000,
+				Temperature:     0.7,
+			},
+			FileUpload: FileUploadConfig{
+				MaxSize:      10 << 20, // 10MB
+				AllowedTypes: []string{".pdf", ".doc", ".docx", ".txt", ".md"},
+				UploadPath:   "./uploads",
+				ChunkSize:    1 << 20, // 1MB
+			},
+			Knowledge: KnowledgeConfig{
+				ChunkSize:    1000,
+				ChunkOverlap: 200,
+				MaxParallel:  5,
+			},
+			Payment: PaymentConfig{
+				WeChatPay: WeChatPayConfig{
+					Enabled: false,
+				},
+				Alipay: AlipayConfig{
+					Enabled: false,
+				},
+			},
+			Provider: ProviderConfig{
+				CatalogCacheTTLSeconds: 300,
+			},
+		}
+	})
+
+	return globalOldConfig
+}
 
 type Config struct {
 	Server     ServerConfig
@@ -45,7 +133,11 @@ type ServerConfig struct {
 }
 
 type DatabaseConfig struct {
-	URL string
+	URL             string
+	MaxOpenConns    int           `yaml:"max_open_conns" env:"DB_MAX_OPEN_CONNS"`
+	MaxIdleConns    int           `yaml:"max_idle_conns" env:"DB_MAX_IDLE_CONNS"`
+	ConnMaxLifetime time.Duration `yaml:"conn_max_lifetime" env:"DB_CONN_MAX_LIFETIME"`
+	ConnMaxIdleTime time.Duration `yaml:"conn_max_idle_time" env:"DB_CONN_MAX_IDLE_TIME"`
 }
 
 type RedisConfig struct {
@@ -210,13 +302,19 @@ type AlipayConfig struct {
 	Enabled    bool
 }
 
-var AppConfig *Config
+// var AppConfig *Config // 已移到v2版本
 
+// LoadConfig 已废弃，使用v2版本的配置系统
+/*
 func LoadConfig() error {
 	// 设置默认值
 	viper.SetDefault("server.port", "8000")
 	viper.SetDefault("server.env", "development")
 	viper.SetDefault("database.url", "postgresql://postgres:postgres@localhost:5432/aihub")
+	viper.SetDefault("database.max_open_conns", 100)
+	viper.SetDefault("database.max_idle_conns", 10)
+	viper.SetDefault("database.conn_max_lifetime", "1h")
+	viper.SetDefault("database.conn_max_idle_time", "30m")
 	viper.SetDefault("redis.host", "localhost")
 	viper.SetDefault("redis.port", "6379")
 	viper.SetDefault("redis.db", 0)
@@ -476,7 +574,8 @@ func LoadConfig() error {
 		viper.Set("payment.alipay.app_id", alipayAppID)
 	}
 
-	AppConfig = &Config{
+	// AppConfig全局变量已移除，使用v2版本的配置系统
+	// AppConfig = &Config{
 		Server: ServerConfig{
 			Port: viper.GetString("server.port"),
 			Env:  viper.GetString("server.env"),
@@ -628,3 +727,4 @@ func LoadConfig() error {
 
 	return nil
 }
+*/

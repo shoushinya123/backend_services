@@ -15,7 +15,7 @@ import (
 var DB *gorm.DB
 
 func InitDB() (*gorm.DB, error) {
-	cfg := config.AppConfig
+	cfg := config.GetAppConfig()
 	if cfg == nil {
 		return nil, fmt.Errorf("config not loaded")
 	}
@@ -33,16 +33,36 @@ func InitDB() (*gorm.DB, error) {
 		return nil, fmt.Errorf("failed to get sql.DB: %w", err)
 	}
 
-	// 优化连接池配置
-	sqlDB.SetMaxIdleConns(10)           // 最大空闲连接数
-	sqlDB.SetMaxOpenConns(100)          // 最大打开连接数
-	sqlDB.SetConnMaxLifetime(time.Hour) // 连接最大生命周期
-	sqlDB.SetConnMaxIdleTime(time.Minute * 30) // 空闲连接最大时间
-
-	// 自动迁移知识库相关表
-	if err := autoMigrate(db); err != nil {
-		log.Printf("⚠️  Database migration warning: %v", err)
+	// 从配置中获取连接池参数，如果没有配置则使用默认值
+	maxOpenConns := cfg.Database.MaxOpenConns
+	if maxOpenConns <= 0 {
+		maxOpenConns = 100 // 默认值
 	}
+
+	maxIdleConns := cfg.Database.MaxIdleConns
+	if maxIdleConns <= 0 {
+		maxIdleConns = 10 // 默认值
+	}
+
+	connMaxLifetime := cfg.Database.ConnMaxLifetime
+	if connMaxLifetime <= 0 {
+		connMaxLifetime = time.Hour // 默认值
+	}
+
+	connMaxIdleTime := cfg.Database.ConnMaxIdleTime
+	if connMaxIdleTime <= 0 {
+		connMaxIdleTime = 30 * time.Minute // 默认值
+	}
+
+	// 设置连接池配置
+	sqlDB.SetMaxOpenConns(maxOpenConns)
+	sqlDB.SetMaxIdleConns(maxIdleConns)
+	sqlDB.SetConnMaxLifetime(connMaxLifetime)
+	sqlDB.SetConnMaxIdleTime(connMaxIdleTime)
+
+	// 注意：迁移现在通过专门的迁移工具执行
+	// 这里不再自动运行迁移，以避免在应用启动时意外修改数据库结构
+	// 使用 ./cmd/migrate 工具来管理数据库迁移
 
 	DB = db
 	log.Println("✅ Database connected successfully")

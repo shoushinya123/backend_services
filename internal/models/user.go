@@ -6,11 +6,11 @@ import (
 
 // 文档处理状态常量
 const (
-	DocumentStatusPending     = "pending"     // 等待处理
-	DocumentStatusProcessing  = "processing"  // 正在处理
-	DocumentStatusCompleted   = "completed"   // 处理完成
-	DocumentStatusFailed      = "failed"      // 处理失败
-	DocumentStatusCancelled   = "cancelled"   // 已取消
+	DocumentStatusPending    = "pending"    // 等待处理
+	DocumentStatusProcessing = "processing" // 正在处理
+	DocumentStatusCompleted  = "completed"  // 处理完成
+	DocumentStatusFailed     = "failed"     // 处理失败
+	DocumentStatusCancelled  = "cancelled"  // 已取消
 )
 
 // 注意：User模型已简化，仅保留核心字段
@@ -234,10 +234,16 @@ type KnowledgeDocument struct {
 	Metadata        string        `gorm:"type:json" json:"metadata"`
 	Status          string        `gorm:"size:20;default:processing" json:"status"`
 	VectorID        string        `gorm:"size:255" json:"vector_id"`
-	TotalTokens     int           `gorm:"column:total_tokens;default:0" json:"total_tokens"` // 文档总token数
+	TotalTokens     int           `gorm:"column:total_tokens;default:0" json:"total_tokens"`                      // 文档总token数
 	ProcessingMode  string        `gorm:"column:processing_mode;size:20;default:fallback" json:"processing_mode"` // full_read | fallback
 	CreateTime      time.Time     `gorm:"column:create_time" json:"create_time"`
 	UpdateTime      time.Time     `gorm:"column:update_time" json:"update_time"`
+
+	// 增量更新相关字段
+	Version         int       `gorm:"column:version;default:1" json:"version"`                      // 文档版本号
+	ContentHash     string    `gorm:"column:content_hash;size:64;index" json:"content_hash"`        // 内容哈希，用于变更检测
+	LastProcessedAt time.Time `gorm:"column:last_processed_at" json:"last_processed_at"`            // 最后处理时间
+	ChangeType      string    `gorm:"column:change_type;size:20;default:'full'" json:"change_type"` // 变更类型：full, incremental, append
 
 	// 关系
 	Chunks []KnowledgeChunk `gorm:"foreignKey:DocumentID"`
@@ -249,21 +255,26 @@ func (KnowledgeDocument) TableName() string {
 
 // KnowledgeChunk 知识块
 type KnowledgeChunk struct {
-	ChunkID          uint              `gorm:"primaryKey;column:chunk_id" json:"chunk_id"`
-	DocumentID       uint              `gorm:"column:document_id;not null;index" json:"document_id"`
-	Document         KnowledgeDocument `gorm:"foreignKey:DocumentID"`
-	Content          string            `gorm:"type:text;not null" json:"content"`
-	ChunkIndex       int               `gorm:"not null;index" json:"chunk_index"`
-	VectorID         string            `gorm:"size:255;not null" json:"vector_id"`
-	Embedding        string            `gorm:"type:json" json:"embedding"`
-	Metadata         string            `gorm:"type:json" json:"metadata"`
-	TokenCount       int               `gorm:"column:token_count;default:0" json:"token_count"`                    // 当前块的token数
-	PrevChunkID      *uint             `gorm:"column:prev_chunk_id;index" json:"prev_chunk_id"`                    // 前一个块的ID
-	NextChunkID      *uint             `gorm:"column:next_chunk_id;index" json:"next_chunk_id"`                    // 下一个块的ID
-	DocumentTotalTokens int            `gorm:"column:document_total_tokens;default:0" json:"document_total_tokens"` // 文档总token数（冗余字段，便于查询）
-	ChunkPosition    int               `gorm:"column:chunk_position;default:0" json:"chunk_position"`                // 块在文档中的位置（0-based）
-	RelatedChunkIDs  string            `gorm:"type:json;column:related_chunk_ids" json:"related_chunk_ids"`      // 关联块ID列表（JSON数组）
-	CreateTime       time.Time         `gorm:"column:create_time" json:"create_time"`
+	ChunkID             uint              `gorm:"primaryKey;column:chunk_id" json:"chunk_id"`
+	DocumentID          uint              `gorm:"column:document_id;not null;index" json:"document_id"`
+	Document            KnowledgeDocument `gorm:"foreignKey:DocumentID"`
+	Content             string            `gorm:"type:text;not null" json:"content"`
+	ChunkIndex          int               `gorm:"not null;index" json:"chunk_index"`
+	VectorID            string            `gorm:"size:255;not null" json:"vector_id"`
+	Embedding           string            `gorm:"type:json" json:"embedding"`
+	Metadata            string            `gorm:"type:json" json:"metadata"`
+	TokenCount          int               `gorm:"column:token_count;default:0" json:"token_count"`                     // 当前块的token数
+	PrevChunkID         *uint             `gorm:"column:prev_chunk_id;index" json:"prev_chunk_id"`                     // 前一个块的ID
+	NextChunkID         *uint             `gorm:"column:next_chunk_id;index" json:"next_chunk_id"`                     // 下一个块的ID
+	DocumentTotalTokens int               `gorm:"column:document_total_tokens;default:0" json:"document_total_tokens"` // 文档总token数（冗余字段，便于查询）
+	ChunkPosition       int               `gorm:"column:chunk_position;default:0" json:"chunk_position"`               // 块在文档中的位置（0-based）
+	RelatedChunkIDs     string            `gorm:"type:json;column:related_chunk_ids" json:"related_chunk_ids"`         // 关联块ID列表（JSON数组）
+	CreateTime          time.Time         `gorm:"column:create_time" json:"create_time"`
+
+	// 增量更新相关字段
+	ContentHash string    `gorm:"column:content_hash;size:64;index" json:"content_hash"` // 分块内容哈希
+	UpdateTime  time.Time `gorm:"column:update_time" json:"update_time"`                 // 更新时间
+	IsActive    bool      `gorm:"column:is_active;default:true" json:"is_active"`        // 是否激活（软删除）
 }
 
 func (KnowledgeChunk) TableName() string {

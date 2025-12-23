@@ -25,11 +25,11 @@ type Service struct {
 
 // ChatRequest 聊天请求（兼容OpenAI格式）
 type ChatRequest struct {
-	Model    string        `json:"model"`
-	Messages []ChatMessage `json:"messages"`
-	Stream   bool          `json:"stream,omitempty"`
-	MaxTokens *int         `json:"max_tokens,omitempty"`
-	Temperature *float64   `json:"temperature,omitempty"`
+	Model       string        `json:"model"`
+	Messages    []ChatMessage `json:"messages"`
+	Stream      bool          `json:"stream,omitempty"`
+	MaxTokens   *int          `json:"max_tokens,omitempty"`
+	Temperature *float64      `json:"temperature,omitempty"`
 }
 
 // ChatMessage 聊天消息
@@ -70,10 +70,10 @@ type EmbeddingRequest struct {
 
 // EmbeddingResponse 向量化响应（兼容OpenAI格式）
 type EmbeddingResponse struct {
-	Object string                     `json:"object"`
-	Data   []EmbeddingResponseData    `json:"data"`
-	Model  string                     `json:"model"`
-	Usage  EmbeddingUsage            `json:"usage"`
+	Object string                  `json:"object"`
+	Data   []EmbeddingResponseData `json:"data"`
+	Model  string                  `json:"model"`
+	Usage  EmbeddingUsage          `json:"usage"`
 }
 
 type EmbeddingResponseData struct {
@@ -99,7 +99,7 @@ type RerankRequest struct {
 type RerankResponse struct {
 	Output struct {
 		Results []struct {
-			Index         int     `json:"index"`
+			Index          int     `json:"index"`
 			RelevanceScore float64 `json:"relevance_score"`
 		} `json:"results"`
 	} `json:"output"`
@@ -322,4 +322,85 @@ func (s *Service) CreateRerank(ctx context.Context, req RerankRequest) (*RerankR
 // Ready 检查服务是否就绪
 func (s *Service) Ready() bool {
 	return s != nil && s.client != nil && s.apiKey != ""
+}
+
+// CountTokens 计算文本的token数量
+func (s *Service) CountTokens(ctx context.Context, text string) (int, error) {
+	if !s.Ready() {
+		return 0, fmt.Errorf("DashScope service not ready")
+	}
+
+	// DashScope不支持直接的token计数API
+	// 我们使用估算方法，基于字符数和模型特征估算
+	return s.estimateTokens(text), nil
+}
+
+// estimateTokens 基于DashScope模型特征估算token数量
+func (s *Service) estimateTokens(text string) int {
+	if text == "" {
+		return 0
+	}
+
+	text = strings.TrimSpace(text)
+	runes := []rune(text)
+
+	// DashScope Qwen模型的token计算规则（近似）：
+	// 1. 中文字符：每个字符算1个token
+	// 2. 英文单词：按BPE分词，大约0.6-0.7个token per word
+	// 3. 标点符号：算1个token
+	// 4. 数字：每个数字算1个token
+
+	chineseChars := 0
+	englishWords := 0
+	numbers := 0
+	punctuation := 0
+
+	for _, r := range runes {
+		if r >= 0x4e00 && r <= 0x9fff {
+			// 中文字符
+			chineseChars++
+		} else if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+			// 英文字符，暂且算作英文单词的一部分
+			englishWords++
+		} else if r >= '0' && r <= '9' {
+			numbers++
+		} else if strings.ContainsRune(".,!?;:\"'()[]{}<>-_+=|\\@#$%^&*", r) {
+			punctuation++
+		}
+	}
+
+	// 估算英文单词数（简单按空格分割）
+	words := strings.Fields(text)
+	englishWords = len(words)
+
+	// DashScope Qwen模型的经验估算公式
+	tokenCount := int(
+		float64(chineseChars)*1.0 + // 中文字符
+			float64(englishWords)*0.65 + // 英文单词
+			float64(numbers)*1.0 + // 数字
+			float64(punctuation)*0.8, // 标点符号
+	)
+
+	// 边界检查
+	if tokenCount < len(runes)/6 {
+		tokenCount = len(runes) / 6
+	}
+	if tokenCount > len(runes)*2 {
+		tokenCount = len(runes) * 2
+	}
+
+	return tokenCount
+}
+
+// CountTokensBatch 批量计算token数量
+func (s *Service) CountTokensBatch(ctx context.Context, texts []string) ([]int, error) {
+	results := make([]int, len(texts))
+	for i, text := range texts {
+		count, err := s.CountTokens(ctx, text)
+		if err != nil {
+			return nil, fmt.Errorf("failed to count tokens for text %d: %w", i, err)
+		}
+		results[i] = count
+	}
+	return results, nil
 }

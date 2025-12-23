@@ -4,58 +4,57 @@
 package router
 
 import (
+	"log"
+
+	"github.com/aihub/backend-go/app/bootstrap"
 	"github.com/aihub/backend-go/app/controllers"
-	"github.com/aihub/backend-go/app/middleware"
 	"github.com/beego/beego/v2/server/web"
 )
 
 // InitKnowledgeRoutes 初始化知识库相关路由（微服务模式）
 func InitKnowledgeRoutes() {
+	// 应用全局中间件
+	ApplyGlobalMiddlewares()
+
+	// 创建控制器工厂
+	app := bootstrap.GetApp()
+	if app == nil {
+		log.Fatal("Application not initialized")
+	}
+
+	factory := controllers.NewControllerFactory(app.GetContainer())
+
+	// 初始化版本管理器
+	versionManager := NewVersionManager(nil, nil) // TODO: 注入logger和errorHandler
+
+	// 构建版本化路由
+	err := versionManager.BuildVersionedRoutes(factory)
+	if err != nil {
+		log.Fatalf("Failed to build versioned routes: %v", err)
+	}
+
+	// 应用版本控制中间件
+	web.InsertFilter("/api/*", web.BeforeRouter, versionManager.VersionMiddleware())
+
+	// 注册基础路由
 	web.Router("/", &controllers.RootController{}, "get:Index")
 	web.Router("/health", &controllers.HealthController{}, "get:Health")
+	web.Router("/metrics", &controllers.MetricsController{}, "get:Metrics")
 
-	// 安全中间件
-	web.InsertFilter("/*", web.BeforeRouter, middleware.ValidationMiddleware())
+	// 注册版本信息路由
+	versionController := NewVersionInfoController(versionManager)
+	web.Router("/api/versions", versionController, "get:GetVersions")
 
-	// CORS 中间件已移到 Envoy Gateway 处理
-	// web.InsertFilter("/*", web.BeforeRouter, middleware.CORSMiddleware)
+	// 注册其他服务路由（非知识库相关）
+	InitOtherServiceRoutes()
 
-	// 知识库路由
-	knowledgeController := &controllers.KnowledgeController{}
-	web.Router("/api/knowledge", knowledgeController, "get:List;post:Create")
-	// 注意：具体路由必须在参数路由之前，否则/models会被:id匹配
-	web.Router("/api/knowledge/models/discover", knowledgeController, "post:DiscoverModels")
-	web.Router("/api/knowledge/:id", knowledgeController, "get:Get;put:Update;delete:Delete")
-	web.Router("/api/knowledge/:id/upload", knowledgeController, "post:UploadDocuments")
-	web.Router("/api/knowledge/:id/upload-batch", knowledgeController, "post:UploadBatch")
-	web.Router("/api/knowledge/:id/process", knowledgeController, "post:ProcessDocuments")
-	web.Router("/api/knowledge/:id/process-long-text", knowledgeController, "post:ProcessLongText")
-	web.Router("/api/knowledge/:id/qwen/health", knowledgeController, "get:QwenHealthCheck")
-	web.Router("/api/knowledge/:id/cache/stats", knowledgeController, "get:GetCacheStats")
-	web.Router("/api/knowledge/:id/performance/stats", knowledgeController, "get:GetPerformanceStats")
-	web.Router("/api/knowledge/:id/search", knowledgeController, "get:Search")
-	web.Router("/api/knowledge/:id/documents", knowledgeController, "get:GetDocuments")
-	web.Router("/api/knowledge/:id/documents/:doc_id", knowledgeController, "get:GetDocument")
-	web.Router("/api/knowledge/:id/documents/:doc_id/index", knowledgeController, "post:GenerateIndex")
-	web.Router("/api/knowledge/:id/permissions", knowledgeController, "get:GetPermissions;put:UpdatePermissions")
-	web.Router("/api/knowledge/:id/sync/notion", knowledgeController, "post:SyncNotion")
-	web.Router("/api/knowledge/:id/sync/web", knowledgeController, "post:SyncWeb")
-
-	// 中间件管理路由（知识库服务需要）
-	middlewareController := &controllers.MiddlewareController{}
-	web.Router("/api/middleware/health", middlewareController, "get:Health")
-	web.Router("/api/middleware/redis", middlewareController, "get:GetRedis")
-	web.Router("/api/cache/clear", middlewareController, "post:ClearCache")
+	log.Println("Routes initialized successfully with versioning support")
 }
 
 
 // Init registers all routes. Must be called after config is loaded.
-func Init() {
-	web.Router("/", &controllers.RootController{}, "get:Index")
-	web.Router("/health", &controllers.HealthController{}, "get:Health")
-
-	// CORS 中间件已移到 Envoy Gateway 处理
-	// web.InsertFilter("/*", web.BeforeRouter, middleware.CORSMiddleware)
+// InitOtherServiceRoutes 初始化其他服务路由（非知识库相关）
+func InitOtherServiceRoutes() {
 
 	modelController := controllers.NewModelController()
 	web.Router("/api/models", modelController, "get:Get;post:Post")
@@ -172,17 +171,7 @@ func Init() {
 	web.Router("/api/books/:id", bookController, "get:Get;put:Update;delete:Delete")
 	web.Router("/api/books/:id/content", bookController, "get:GetContent")
 
-	// 知识库路由
-	knowledgeController := &controllers.KnowledgeController{}
-	web.Router("/api/knowledge", knowledgeController, "get:List;post:Create")
-	web.Router("/api/knowledge/:id", knowledgeController, "get:Get;put:Update;delete:Delete")
-	web.Router("/api/knowledge/:id/upload", knowledgeController, "post:UploadDocuments")
-	web.Router("/api/knowledge/:id/upload-batch", knowledgeController, "post:UploadBatch")
-	web.Router("/api/knowledge/:id/process", knowledgeController, "post:ProcessDocuments")
-	web.Router("/api/knowledge/:id/search", knowledgeController, "get:Search")
-	web.Router("/api/knowledge/:id/documents/:doc_id/index", knowledgeController, "post:GenerateIndex")
-	web.Router("/api/knowledge/:id/sync/notion", knowledgeController, "post:SyncNotion")
-	web.Router("/api/knowledge/:id/sync/web", knowledgeController, "post:SyncWeb")
+	// 知识库路由已移至版本管理系统
 
 	// AI聊天路由
 	aiChatController := &controllers.AIChatController{}
@@ -221,10 +210,7 @@ func Init() {
 	web.Router("/api/workflows/:id/executions", workflowsController, "get:GetExecutions")
 	web.Router("/api/workflows/:id/executions/:execution_id", workflowsController, "get:GetExecution")
 
-	// 中间件管理路由
-	middlewareController := &controllers.MiddlewareController{}
-	web.Router("/api/middleware/health", middlewareController, "get:Health")
-	web.Router("/api/middleware/redis", middlewareController, "get:GetRedis")
-	web.Router("/api/cache/clear", middlewareController, "post:ClearCache")
+	// 注意：中间件管理路由已在InitKnowledgeRoutes中通过buildMiddlewareRoutes定义
+	// 这里不再重复定义
 
 }

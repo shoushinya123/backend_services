@@ -26,7 +26,7 @@ type ScenarioRouter struct {
 
 // NewScenarioRouter 创建场景路由服务
 func NewScenarioRouter(tokenCounter *TokenCounter) *ScenarioRouter {
-	cfg := config.AppConfig
+	cfg := config.GetAppConfig()
 	maxTokens := MaxTokensThreshold
 	if cfg != nil && cfg.Knowledge.LongText.MaxTokens > 0 {
 		maxTokens = cfg.Knowledge.LongText.MaxTokens

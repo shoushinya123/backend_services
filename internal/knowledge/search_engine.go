@@ -3,6 +3,7 @@ package knowledge
 import (
 	"context"
 	"errors"
+	"math"
 	"regexp"
 	"sort"
 	"strings"
@@ -18,15 +19,191 @@ type HybridSearchRequest struct {
 	VectorThreshold float64 // 向量检索相似度阈值，默认0.9
 }
 
+// QueryType 查询类型枚举
+type QueryType int
+
+const (
+	QueryTypeUnknown  QueryType = iota
+	QueryTypeQuestion           // 问题查询（如"什么是机器学习？"）
+	QueryTypeKeyword            // 关键词查询（如"机器学习 算法"）
+	QueryTypePhrase             // 短语查询（如"深度学习模型"）
+	QueryTypeCode               // 代码查询（如函数名、类名）
+	QueryTypeExact              // 精确匹配查询（如带引号的短语）
+	QueryTypeLongForm           // 长文本查询
+)
+
+// QueryAnalyzer 查询分析器
+type QueryAnalyzer struct {
+	patterns map[QueryType][]*regexp.Regexp
+}
+
+// NewQueryAnalyzer 创建查询分析器
+func NewQueryAnalyzer() *QueryAnalyzer {
+	analyzer := &QueryAnalyzer{
+		patterns: make(map[QueryType][]*regexp.Regexp),
+	}
+	analyzer.initPatterns()
+	return analyzer
+}
+
+// initPatterns 初始化查询模式
+func (qa *QueryAnalyzer) initPatterns() {
+	// 问题查询模式
+	qa.patterns[QueryTypeQuestion] = []*regexp.Regexp{
+		regexp.MustCompile(`(?i)^(what|how|why|when|where|who|which|can|could|should|would|is|are|do|does|did|will|have|has)\s+`), // 疑问词开头
+		regexp.MustCompile(`(?i)[?？]$`), // 以问号结尾
+		regexp.MustCompile(`(?i)(意思|是什么|怎么|为什么|怎么样|如何|能否|可以)`), // 中文疑问词
+	}
+
+	// 精确匹配查询模式
+	qa.patterns[QueryTypeExact] = []*regexp.Regexp{
+		regexp.MustCompile(`^".*"$`), // 双引号包围
+		regexp.MustCompile(`^'.*'$`), // 单引号包围
+		regexp.MustCompile(`^【.*】$`), // 中文书名号
+		regexp.MustCompile(`^《.*》$`), // 中文书名号
+	}
+
+	// 代码查询模式
+	qa.patterns[QueryTypeCode] = []*regexp.Regexp{
+		regexp.MustCompile(`\b(func|class|def|function|method|interface|struct|type|var|const|let|const|import|from|package)\b`), // 编程关键字
+		regexp.MustCompile(`[{}();=<>[\]]`),                  // 代码符号
+		regexp.MustCompile(`\b[A-Z][a-zA-Z0-9_]*\b`),         // 驼峰命名
+		regexp.MustCompile(`\.[a-zA-Z_][a-zA-Z0-9_]*\(.*\)`), // 方法调用
+	}
+
+	// 长文本查询模式
+	qa.patterns[QueryTypeLongForm] = []*regexp.Regexp{
+		regexp.MustCompile(`.{100,}`), // 超过100个字符
+		regexp.MustCompile(`\s+`),     // 包含多个空格（句子）
+	}
+}
+
+// AnalyzeQuery 分析查询类型
+func (qa *QueryAnalyzer) AnalyzeQuery(query string) QueryType {
+	// 预处理查询
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return QueryTypeUnknown
+	}
+
+	// 检查精确匹配
+	if qa.matchesType(query, QueryTypeExact) {
+		return QueryTypeExact
+	}
+
+	// 检查问题查询
+	if qa.matchesType(query, QueryTypeQuestion) {
+		return QueryTypeQuestion
+	}
+
+	// 检查代码查询
+	if qa.matchesType(query, QueryTypeCode) {
+		return QueryTypeCode
+	}
+
+	// 检查长文本查询
+	if qa.matchesType(query, QueryTypeLongForm) {
+		return QueryTypeLongForm
+	}
+
+	// 检查是否是短语（多个词且长度适中）
+	words := strings.Fields(query)
+	if len(words) > 1 && len(words) <= 5 && len(query) <= 50 {
+		return QueryTypePhrase
+	}
+
+	// 检查是否是关键词（单个词或短关键词）
+	if len(words) <= 3 && len(query) <= 30 {
+		return QueryTypeKeyword
+	}
+
+	// 默认作为关键词查询
+	return QueryTypeKeyword
+}
+
+// matchesType 检查查询是否匹配指定类型
+func (qa *QueryAnalyzer) matchesType(query string, queryType QueryType) bool {
+	patterns, exists := qa.patterns[queryType]
+	if !exists {
+		return false
+	}
+
+	for _, pattern := range patterns {
+		if pattern.MatchString(query) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// SmartWeightAdjuster 智能权重调整器
+type SmartWeightAdjuster struct {
+	analyzer *QueryAnalyzer
+}
+
+// NewSmartWeightAdjuster 创建智能权重调整器
+func NewSmartWeightAdjuster() *SmartWeightAdjuster {
+	return &SmartWeightAdjuster{
+		analyzer: NewQueryAnalyzer(),
+	}
+}
+
+// AdjustWeights 根据查询类型调整权重
+func (swa *SmartWeightAdjuster) AdjustWeights(query string, baseVectorWeight, baseFulltextWeight float64) (vectorWeight, fulltextWeight float64) {
+	queryType := swa.analyzer.AnalyzeQuery(query)
+
+	// 根据查询类型调整权重
+	switch queryType {
+	case QueryTypeQuestion:
+		// 问题查询：向量搜索更重要，因为需要语义理解
+		vectorWeight = math.Min(baseVectorWeight+0.2, 0.8)
+		fulltextWeight = 1.0 - vectorWeight
+
+	case QueryTypeKeyword:
+		// 关键词查询：全文搜索更重要
+		fulltextWeight = math.Min(baseFulltextWeight+0.2, 0.8)
+		vectorWeight = 1.0 - fulltextWeight
+
+	case QueryTypePhrase:
+		// 短语查询：平衡权重，但稍微偏向向量搜索
+		vectorWeight = math.Min(baseVectorWeight+0.1, 0.7)
+		fulltextWeight = 1.0 - vectorWeight
+
+	case QueryTypeCode:
+		// 代码查询：全文搜索更重要（精确匹配）
+		fulltextWeight = math.Min(baseFulltextWeight+0.3, 0.9)
+		vectorWeight = 1.0 - fulltextWeight
+
+	case QueryTypeExact:
+		// 精确匹配：全文搜索占主导
+		fulltextWeight = 0.9
+		vectorWeight = 0.1
+
+	case QueryTypeLongForm:
+		// 长文本查询：向量搜索更重要（语义匹配）
+		vectorWeight = math.Min(baseVectorWeight+0.3, 0.8)
+		fulltextWeight = 1.0 - vectorWeight
+
+	default:
+		// 默认权重
+		vectorWeight = baseVectorWeight
+		fulltextWeight = baseFulltextWeight
+	}
+
+	return vectorWeight, fulltextWeight
+}
+
 // HybridSearchEngine 组合全文与向量搜索
 type HybridSearchEngine struct {
 	indexer          FulltextIndexer
 	vectorStore      VectorStore
 	embedder         Embedder
-	reranker         Reranker // 重排序器
-	relatedChunkSize int      // 关联块数量（前后各N块，默认1）
-	vectorWeight     float64  // 向量检索权重（默认0.6）
-	fulltextWeight   float64  // 全文检索权重（默认0.4）
+	reranker         Reranker             // 重排序器
+	relatedChunkSize int                  // 关联块数量（前后各N块，默认1）
+	vectorWeight     float64              // 向量检索权重（默认0.6）
+	fulltextWeight   float64              // 全文检索权重（默认0.4）
+	weightAdjuster   *SmartWeightAdjuster // 智能权重调整器
 }
 
 func NewHybridSearchEngine(indexer FulltextIndexer, vectorStore VectorStore, embedder Embedder, reranker Reranker) *HybridSearchEngine {
@@ -35,9 +212,10 @@ func NewHybridSearchEngine(indexer FulltextIndexer, vectorStore VectorStore, emb
 		vectorStore:      vectorStore,
 		embedder:         embedder,
 		reranker:         reranker,
-		relatedChunkSize: 1,      // 默认前后各1块
-		vectorWeight:     0.6,    // 向量检索权重60%
-		fulltextWeight:   0.4,    // 全文检索权重40%
+		relatedChunkSize: 1,                        // 默认前后各1块
+		vectorWeight:     0.6,                      // 向量检索权重60%
+		fulltextWeight:   0.4,                      // 全文检索权重40%
+		weightAdjuster:   NewSmartWeightAdjuster(), // 智能权重调整器
 	}
 }
 
@@ -250,12 +428,12 @@ func (e *HybridSearchEngine) Search(ctx context.Context, req HybridSearchRequest
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// 关联块召回：为每个结果添加前后关联块
 	if e.relatedChunkSize > 0 {
 		results = e.expandWithRelatedChunks(ctx, results)
 	}
-	
+
 	return results, nil
 }
 
@@ -395,6 +573,9 @@ func (e *HybridSearchEngine) searchAutoNaturalLong(ctx context.Context, req Hybr
 
 // mergeResults 混合检索：加权融合（全文×0.6 + 向量×0.4）
 func (e *HybridSearchEngine) mergeResults(ctx context.Context, req HybridSearchRequest, vectorResults, fullResults []SearchMatch) ([]SearchMatch, error) {
+	// 智能权重调整：根据查询类型动态调整权重
+	vectorWeight, fulltextWeight := e.weightAdjuster.AdjustWeights(req.Query, e.vectorWeight, e.fulltextWeight)
+
 	// 归一化全文检索得分
 	var maxFullScore float64
 	for _, r := range fullResults {
@@ -409,7 +590,7 @@ func (e *HybridSearchEngine) mergeResults(ctx context.Context, req HybridSearchR
 	// 处理向量结果
 	for _, item := range vectorResults {
 		chunk := item
-		chunk.Score = chunk.Score * e.vectorWeight // 向量权重
+		chunk.Score = chunk.Score * vectorWeight // 动态向量权重
 		scoreMap[chunk.ChunkID] = &chunk
 	}
 
@@ -418,7 +599,7 @@ func (e *HybridSearchEngine) mergeResults(ctx context.Context, req HybridSearchR
 		normalizedScore := e.normalizeScore(item.Score, maxFullScore)
 		if existing, ok := scoreMap[item.ChunkID]; ok {
 			// 融合：向量×vectorWeight + 全文×fulltextWeight
-			existing.Score += normalizedScore * e.fulltextWeight
+			existing.Score += normalizedScore * fulltextWeight
 			if existing.Highlight == "" {
 				existing.Highlight = item.Highlight
 			}
@@ -427,7 +608,7 @@ func (e *HybridSearchEngine) mergeResults(ctx context.Context, req HybridSearchR
 			}
 		} else {
 			chunk := item
-			chunk.Score = normalizedScore * e.fulltextWeight // 全文权重
+			chunk.Score = normalizedScore * fulltextWeight // 动态全文权重
 			scoreMap[item.ChunkID] = &chunk
 		}
 	}

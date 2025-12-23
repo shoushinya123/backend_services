@@ -20,7 +20,7 @@ type PrometheusService struct {
 
 // NewPrometheusService 创建 Prometheus 服务
 func NewPrometheusService() *PrometheusService {
-	cfg := config.AppConfig.Prometheus
+	cfg := config.GetAppConfig().Prometheus
 	return &PrometheusService{
 		httpClient: &http.Client{Timeout: 10 * time.Second},
 		baseURL:    cfg.BaseURL,

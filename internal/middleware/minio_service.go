@@ -27,7 +27,7 @@ func NewMinIOService() (*MinIOService, error) {
 		return globalMinIOService, nil
 	}
 
-	cfg := config.AppConfig.Knowledge.Storage
+	cfg := config.GetAppConfig().Knowledge.Storage
 	if cfg.Provider != "minio" && cfg.Provider != "s3" {
 		return nil, fmt.Errorf("object storage provider is not minio/s3")
 	}

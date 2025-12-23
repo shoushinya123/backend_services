@@ -16,7 +16,6 @@ type DashScopeEmbedder struct {
 	dimensions int
 }
 
-
 // 千问Embedding模型维度映射
 var dashscopeEmbeddingDimensions = map[string]int{
 	"text-embedding-v1":       1536, // 通义千问文本向量化模型
@@ -100,4 +99,3 @@ func (e *DashScopeEmbedder) Dimensions() int {
 func (e *DashScopeEmbedder) Ready() bool {
 	return e.service != nil && e.service.Ready()
 }
-

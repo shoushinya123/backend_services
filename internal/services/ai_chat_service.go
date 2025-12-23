@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/aihub/backend-go/internal/config"
-	"github.com/aihub/backend-go/internal/database"
 	"github.com/aihub/backend-go/internal/dashscope"
+	"github.com/aihub/backend-go/internal/database"
 	"github.com/aihub/backend-go/internal/kafka"
 	"github.com/aihub/backend-go/internal/logger"
 	"github.com/aihub/backend-go/internal/models"
@@ -59,12 +59,12 @@ type SendMessageRequest struct {
 
 // ConversationResponse 对话响应
 type ConversationResponse struct {
-	ConversationID uint               `json:"conversation_id"`
-	MessageID      uint               `json:"message_id"`
-	Role           string             `json:"role"`
-	Content        string             `json:"content"`
-	TokenCount    int                `json:"token_count,omitempty"`
-	Usage          *kafka.UsageInfo   `json:"usage,omitempty"`
+	ConversationID uint             `json:"conversation_id"`
+	MessageID      uint             `json:"message_id"`
+	Role           string           `json:"role"`
+	Content        string           `json:"content"`
+	TokenCount     int              `json:"token_count,omitempty"`
+	Usage          *kafka.UsageInfo `json:"usage,omitempty"`
 }
 
 // AIChatRequest 通用AI聊天请求（兼容原有接口）
@@ -78,7 +78,7 @@ type AIChatRequest struct {
 // NewAIChatService 创建AI聊天服务
 func NewAIChatService() *AIChatService {
 	return &AIChatService{
-		config: &config.AppConfig.AI,
+		config: &config.GetAppConfig().AI,
 		logger: logger.Logger,
 	}
 }

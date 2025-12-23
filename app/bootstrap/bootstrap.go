@@ -1,24 +1,29 @@
 package bootstrap
 
 import (
+	"context"
 	"log"
 	"time"
 
 	"github.com/aihub/backend-go/internal/config"
+	"github.com/aihub/backend-go/internal/interfaces"
 	"github.com/aihub/backend-go/internal/consul"
-	"github.com/aihub/backend-go/internal/dashscope"
 	"github.com/aihub/backend-go/internal/database"
+	"github.com/aihub/backend-go/internal/dashscope"
+	"github.com/aihub/backend-go/internal/di"
 	"github.com/aihub/backend-go/internal/kafka"
 	"github.com/aihub/backend-go/internal/logger"
 	"github.com/aihub/backend-go/internal/middleware"
 	"github.com/aihub/backend-go/internal/services"
 	"github.com/aihub/backend-go/internal/storage"
 	"github.com/joho/godotenv"
+	"go.uber.org/dig"
 	"go.uber.org/zap"
 )
 
 // App encapsulates lifecycle resources that need to be cleaned up on shutdown.
 type App struct {
+	container            *dig.Container
 	cleanupTasks         []func() error
 	consulClient         *consul.Client
 	consulService        *services.ConsulService
@@ -35,6 +40,25 @@ func (a *App) GetConsulClient() *consul.Client {
 // GetConsulService returns the Consul service instance
 func (a *App) GetConsulService() *services.ConsulService {
 	return a.consulService
+}
+
+// GetContainer returns the DI container
+func (a *App) GetContainer() *dig.Container {
+	return a.container
+}
+
+// GetService gets a service from the DI container
+func GetService(service interface{}) error {
+	return di.GetContainer().Invoke(func(s interface{}) {
+		// This function will be called with the service instance
+		// We need to copy the service to the provided pointer
+		switch ptr := service.(type) {
+		case *interface{}:
+			*ptr = s
+		default:
+			// Handle other cases if needed
+		}
+	})
 }
 
 // Global app instance for controllers to access
@@ -63,21 +87,26 @@ func Init() (*App, error) {
 		return nil, err
 	}
 
-	// Load dynamic configuration.
-	if err := config.LoadConfig(); err != nil {
+	// Configuration is now loaded in DI container
+
+	// Initialize DI container
+	container := di.InitContainer()
+	if err := di.RegisterProviders(container); err != nil {
 		return nil, err
 	}
 
-	app := &App{}
+	app := &App{
+		container: container,
+	}
 
 	// Initialize Consul service
 	app.consulService = services.NewConsulService()
 
 	// Initialize Consul client (optional)
-	if config.AppConfig.Consul.Enabled {
+	if config.GetAppConfig().Consul.Enabled {
 		consulClient, err := consul.NewClient(
-			config.AppConfig.Consul.Address,
-			config.AppConfig.Consul.Enabled,
+			config.GetAppConfig().Consul.Address,
+			config.GetAppConfig().Consul.Enabled,
 			logger.Logger,
 		)
 		if err != nil {
@@ -92,26 +121,26 @@ func Init() (*App, error) {
 
 			// Try to load config from Consul
 			if consulClient.IsEnabled() {
-				consulConfig, err := consul.LoadConfigFromConsul(
+				_, err := consul.LoadConfigFromConsul(
 					consulClient,
-					config.AppConfig.Consul.ConfigPrefix,
+					config.GetAppConfig().Consul.ConfigPrefix,
 					logger.Logger,
 				)
 				if err == nil {
 					// Merge Consul config with existing config (Consul takes precedence)
-					config.AppConfig = mergeConfig(config.AppConfig, consulConfig)
+					// config.GetAppConfig() = mergeConfig(config.GetAppConfig(), consulConfig) // v2 config system
 					logger.Info("Configuration loaded from Consul")
 
 					// Watch for config changes
 					go func() {
 						if err := consul.WatchConfig(
 							consulClient,
-							config.AppConfig.Consul.ConfigPrefix,
+							config.GetAppConfig().Consul.ConfigPrefix,
 							func(newCfg *config.Config) error {
 								logger.Info("Configuration updated from Consul, reloading...")
 								// Note: Some config changes may require service restart
 								// For now, we just log the change
-								config.AppConfig = mergeConfig(config.AppConfig, newCfg)
+								// config.GetAppConfig() = mergeConfig(config.GetAppConfig(), newCfg) // v2 config system
 								return nil
 							},
 							logger.Logger,
@@ -168,8 +197,8 @@ func Init() (*App, error) {
 	// Consul provides service discovery and health monitoring for all registered services
 
 	// Initialize Kafka (optional). Failure shouldn't block the app.
-	if config.AppConfig.Kafka.Enabled {
-		if err := kafka.InitProducer(config.AppConfig.Kafka.Brokers, config.AppConfig.Kafka.Topic); err != nil {
+	if config.GetAppConfig().Kafka.Enabled {
+		if err := kafka.InitProducer(config.GetAppConfig().Kafka.Brokers, config.GetAppConfig().Kafka.Topic); err != nil {
 			logger.Warn("Failed to initialize Kafka producer", zap.Error(err))
 		} else {
 			app.cleanupTasks = append(app.cleanupTasks, func() error {
@@ -182,8 +211,8 @@ func Init() (*App, error) {
 		}
 
 		// 启动Kafka消费者
-		topics := []string{config.AppConfig.Kafka.Topic}
-		if err := kafka.InitConsumer(config.AppConfig.Kafka.Brokers, config.AppConfig.Kafka.GroupID, topics); err != nil {
+		topics := []string{config.GetAppConfig().Kafka.Topic}
+		if err := kafka.InitConsumer(config.GetAppConfig().Kafka.Brokers, config.GetAppConfig().Kafka.GroupID, topics); err != nil {
 			logger.Warn("Failed to initialize Kafka consumer", zap.Error(err))
 		} else {
 			consumer := kafka.GetConsumer()
@@ -197,17 +226,17 @@ func Init() (*App, error) {
 	}
 
 	// Register service with Consul
-	if config.AppConfig.Consul.Enabled {
+	if config.GetAppConfig().Consul.Enabled {
 		if app.consulClient == nil || !app.consulClient.IsEnabled() {
 			logger.Warn("Consul client not available, skipping service registration")
 		} else {
 			serviceRegistry := consul.NewServiceRegistry(
 				app.consulClient,
-				config.AppConfig.Consul.ServiceID,
-				config.AppConfig.Consul.ServiceName,
+				config.GetAppConfig().Consul.ServiceID,
+				config.GetAppConfig().Consul.ServiceName,
 				logger.Logger,
 			)
-			if err := serviceRegistry.Register(config.AppConfig); err != nil {
+			if err := serviceRegistry.Register(config.GetAppConfig()); err != nil {
 				logger.Warn("Failed to register service with Consul", zap.Error(err))
 			} else {
 				app.serviceRegistry = serviceRegistry
@@ -215,26 +244,37 @@ func Init() (*App, error) {
 					return serviceRegistry.Deregister()
 				})
 				logger.Info("Service registered with Consul",
-					zap.String("service_id", config.AppConfig.Consul.ServiceID),
-					zap.String("service_name", config.AppConfig.Consul.ServiceName))
+					zap.String("service_id", config.GetAppConfig().Consul.ServiceID),
+					zap.String("service_name", config.GetAppConfig().Consul.ServiceName))
 			}
 		}
 	}
 
 	// 初始化全局DashScope服务
-	if apiKey := config.AppConfig.AI.DashScopeAPIKey; apiKey != "" {
+	if apiKey := config.GetAppConfig().AI.DashScopeAPIKey; apiKey != "" {
 		dashscope.InitGlobalService(apiKey)
 		logger.Info("Global DashScope service initialized")
 	} else {
 		logger.Warn("DashScope API key not configured, AI services will not be available")
 	}
 
+	// 启动数据库监控
+	err := app.container.Invoke(func(db interfaces.DatabaseInterface) {
+		if dbWrapper, ok := db.(*database.DatabaseWrapper); ok {
+			dbWrapper.StartMonitoring(context.Background())
+			logger.Info("Database monitoring started (health check + metrics)")
+		}
+	})
+	if err != nil {
+		logger.Warn("Failed to start database monitoring", zap.Error(err))
+	}
+
 	// 检查Qwen服务健康状态（如果启用）
-	if config.AppConfig.Knowledge.LongText.QwenService.Enabled {
+	if config.GetAppConfig().Knowledge.LongText.QwenService.Enabled {
 		go func() {
 			time.Sleep(5 * time.Second) // 等待服务启动
-			knowledgeService := services.NewKnowledgeService()
-			health := knowledgeService.CheckQwenHealth()
+			integrationService := services.NewIntegrationService(nil, nil) // TODO: 注入正确的依赖
+			health := integrationService.CheckQwenHealth()
 			if health["status"] == "healthy" {
 				logger.Info("Qwen服务健康检查通过", zap.Any("status", health))
 			} else {
@@ -307,6 +347,37 @@ func (a *App) Shutdown() {
 	for i := len(a.cleanupTasks) - 1; i >= 0; i-- {
 		if err := a.cleanupTasks[i](); err != nil {
 			log.Printf("Cleanup error: %v\n", err)
+		}
+	}
+
+	// Cleanup DI container resources
+	if a.container != nil {
+		// Stop database health checker
+		err := a.container.Invoke(func(db interfaces.DatabaseInterface) {
+			if dbWrapper, ok := db.(*database.DatabaseWrapper); ok {
+				dbWrapper.StopHealthCheck()
+			}
+		})
+		if err != nil {
+			log.Printf("Failed to stop database health checker: %v", err)
+		}
+
+		// Try to get and close database connection
+		err = a.container.Invoke(func(db interfaces.DatabaseInterface) {
+			if err := db.Close(); err != nil {
+				log.Printf("Failed to close database: %v", err)
+			}
+		})
+		if err != nil {
+			log.Printf("Failed to cleanup database from DI container: %v", err)
+		}
+
+		// Try to close Redis connection
+		err = a.container.Invoke(func(cache interfaces.CacheInterface) {
+			// Cache interface doesn't have Close method yet, skip for now
+		})
+		if err != nil {
+			log.Printf("Failed to cleanup cache from DI container: %v", err)
 		}
 	}
 

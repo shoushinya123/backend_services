@@ -22,7 +22,7 @@ func NewMilvusService() (*MilvusService, error) {
 		return globalMilvusService, nil
 	}
 
-	cfg := config.AppConfig.Knowledge.VectorStore.Milvus
+	cfg := config.GetAppConfig().Knowledge.VectorStore.Milvus
 	if cfg.Address == "" {
 		return nil, fmt.Errorf("milvus address not configured")
 	}

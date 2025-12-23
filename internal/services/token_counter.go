@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/aihub/backend-go/internal/config"
+	"github.com/aihub/backend-go/internal/dashscope"
 	"github.com/aihub/backend-go/internal/logger"
 	"go.uber.org/zap"
 )
@@ -45,34 +46,45 @@ type QwenServiceConfig struct {
 
 // TokenCounter Token计数服务
 type TokenCounter struct {
-	qwenClient *QwenModelClient
-	fallback   bool // 是否使用fallback模式（本地估算）
+	dashscopeService *dashscope.Service
+	qwenClient       *QwenModelClient // 保留作为备选
+	fallback         bool             // 是否使用fallback模式（本地估算）
 }
 
 // NewTokenCounter 创建Token计数服务
 func NewTokenCounter() *TokenCounter {
-	cfg := config.AppConfig
+	cfg := config.GetAppConfig()
 	tc := &TokenCounter{
 		fallback: true, // 默认使用fallback
 	}
 
-	// 如果配置了Qwen服务，尝试创建客户端
-	if cfg != nil && cfg.Knowledge.LongText.QwenService.Enabled {
-		qwenCfg := QwenServiceConfig{
-			Enabled:   cfg.Knowledge.LongText.QwenService.Enabled,
-			BaseURL:   cfg.Knowledge.LongText.QwenService.BaseURL,
-			Port:      cfg.Knowledge.LongText.QwenService.Port,
-			APIKey:    cfg.Knowledge.LongText.QwenService.APIKey,
-			Timeout:   cfg.Knowledge.LongText.QwenService.Timeout,
-			LocalMode: cfg.Knowledge.LongText.QwenService.LocalMode,
-		}
-		qwenClient, err := NewQwenModelClient(qwenCfg)
-		if err == nil {
-			tc.qwenClient = qwenClient
-			tc.fallback = false
-			logger.Info("TokenCounter initialized with Qwen service")
+	// 优先使用DashScope服务
+	dashscopeSvc := dashscope.GetGlobalService()
+	if dashscopeSvc != nil && dashscopeSvc.Ready() {
+		tc.dashscopeService = dashscopeSvc
+		tc.fallback = false
+		logger.Info("TokenCounter initialized with DashScope service")
+	} else {
+		// 备选：使用Qwen服务
+		if cfg != nil && cfg.Knowledge.LongText.QwenService.Enabled {
+			qwenCfg := QwenServiceConfig{
+				Enabled:   cfg.Knowledge.LongText.QwenService.Enabled,
+				BaseURL:   cfg.Knowledge.LongText.QwenService.BaseURL,
+				Port:      cfg.Knowledge.LongText.QwenService.Port,
+				APIKey:    cfg.Knowledge.LongText.QwenService.APIKey,
+				Timeout:   cfg.Knowledge.LongText.QwenService.Timeout,
+				LocalMode: cfg.Knowledge.LongText.QwenService.LocalMode,
+			}
+			qwenClient, err := NewQwenModelClient(qwenCfg)
+			if err == nil {
+				tc.qwenClient = qwenClient
+				tc.fallback = false
+				logger.Info("TokenCounter initialized with Qwen service")
+			} else {
+				logger.Warn("Failed to initialize Qwen client, using fallback", zap.Error(err))
+			}
 		} else {
-			logger.Warn("Failed to initialize Qwen client, using fallback", zap.Error(err))
+			logger.Info("No external token counting service available, using local estimation")
 		}
 	}
 
@@ -81,7 +93,16 @@ func NewTokenCounter() *TokenCounter {
 
 // CountTokens 计算文本的token数量
 func (tc *TokenCounter) CountTokens(ctx context.Context, text string) (int, error) {
-	// 优先使用Qwen服务
+	// 优先使用DashScope服务
+	if tc.dashscopeService != nil {
+		count, err := tc.dashscopeService.CountTokens(ctx, text)
+		if err == nil {
+			return count, nil
+		}
+		logger.Warn("DashScope token count failed, trying fallback", zap.Error(err))
+	}
+
+	// 备选：使用Qwen服务
 	if tc.qwenClient != nil {
 		count, err := tc.qwenClient.CountTokens(ctx, text)
 		if err == nil {
@@ -90,7 +111,7 @@ func (tc *TokenCounter) CountTokens(ctx context.Context, text string) (int, erro
 		logger.Warn("Qwen token count failed, using fallback", zap.Error(err))
 	}
 
-	// Fallback: 使用简单的估算方法
+	// Fallback: 使用本地估算方法
 	return tc.estimateTokens(text), nil
 }
 
@@ -114,14 +135,14 @@ func (tc *TokenCounter) estimateTokens(text string) int {
 
 // TextStats 文本统计信息
 type TextStats struct {
-	ChineseChars   int // 中文字符数
-	EnglishChars   int // 英文字符数
-	Digits         int // 数字字符数
-	Punctuation    int // 标点符号数
-	Whitespace     int // 空白字符数
-	OtherChars     int // 其他字符数
-	EnglishWords   int // 英文单词数
-	TotalChars     int // 总字符数
+	ChineseChars int // 中文字符数
+	EnglishChars int // 英文字符数
+	Digits       int // 数字字符数
+	Punctuation  int // 标点符号数
+	Whitespace   int // 空白字符数
+	OtherChars   int // 其他字符数
+	EnglishWords int // 英文单词数
+	TotalChars   int // 总字符数
 }
 
 // analyzeText 分析文本结构
@@ -136,11 +157,11 @@ func (tc *TokenCounter) analyzeText(text string) TextStats {
 		switch {
 		// 中文字符（包括扩展区域）
 		case (r >= 0x4e00 && r <= 0x9fff) || // 基本汉字
-			 (r >= 0x3400 && r <= 0x4dbf) || // 扩展A
-			 (r >= 0x20000 && r <= 0x2a6df) || // 扩展B
-			 (r >= 0x2a700 && r <= 0x2b73f) || // 扩展C
-			 (r >= 0x2b740 && r <= 0x2b81f) || // 扩展D
-			 (r >= 0x2b820 && r <= 0x2ceaf): // 扩展E
+			(r >= 0x3400 && r <= 0x4dbf) || // 扩展A
+			(r >= 0x20000 && r <= 0x2a6df) || // 扩展B
+			(r >= 0x2a700 && r <= 0x2b73f) || // 扩展C
+			(r >= 0x2b740 && r <= 0x2b81f) || // 扩展D
+			(r >= 0x2b820 && r <= 0x2ceaf): // 扩展E
 			stats.ChineseChars++
 
 		// 英文字符
@@ -157,14 +178,14 @@ func (tc *TokenCounter) analyzeText(text string) TextStats {
 
 		// 常见标点符号
 		case r == '.' || r == ',' || r == '!' || r == '?' || r == ';' || r == ':' ||
-			 r == '(' || r == ')' || r == '[' || r == ']' || r == '{' || r == '}' ||
-			 r == '"' || r == '\'' || r == '-' || r == '_' || r == '/' || r == '\\' ||
-			 r == '+' || r == '=' || r == '*' || r == '&' || r == '%' || r == '$' ||
-			 r == '#' || r == '@' || r == '^' || r == '~' || r == '`' || r == '|' ||
-			 r == '<' || r == '>' || r == '·' || r == '。' || r == '，' || r == '！' ||
-			 r == '？' || r == '；' || r == '：' || r == '（' || r == '）' || r == '【' ||
-			 r == '】' || r == '《' || r == '》' || r == '「' || r == '」' || r == '『' ||
-			 r == '』' || r == '、' || r == '，':
+			r == '(' || r == ')' || r == '[' || r == ']' || r == '{' || r == '}' ||
+			r == '"' || r == '\'' || r == '-' || r == '_' || r == '/' || r == '\\' ||
+			r == '+' || r == '=' || r == '*' || r == '&' || r == '%' || r == '$' ||
+			r == '#' || r == '@' || r == '^' || r == '~' || r == '`' || r == '|' ||
+			r == '<' || r == '>' || r == '·' || r == '。' || r == '，' || r == '！' ||
+			r == '？' || r == '；' || r == '：' || r == '（' || r == '）' || r == '【' ||
+			r == '】' || r == '《' || r == '》' || r == '「' || r == '」' || r == '『' ||
+			r == '』' || r == '、' || r == '，':
 			stats.Punctuation++
 
 		default:
@@ -183,7 +204,7 @@ func (tc *TokenCounter) countEnglishWords(text string) int {
 	words := strings.FieldsFunc(text, func(r rune) bool {
 		// 按非字母、数字、下划线分割
 		return !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
-				 (r >= '0' && r <= '9') || r == '_' || r == '-')
+			(r >= '0' && r <= '9') || r == '_' || r == '-')
 	})
 
 	wordCount := 0
@@ -210,13 +231,13 @@ func (tc *TokenCounter) countEnglishWords(text string) int {
 func (tc *TokenCounter) calculateTokens(stats TextStats) int {
 	// 基于实证研究的token系数（近似值）
 	const (
-		chineseTokenRatio     = 1.6  // 中文字符的平均token系数
-		englishWordRatio      = 1.3  // 英文单词的平均token系数
-		englishCharRatio      = 0.3  // 英文字符的附加系数（用于非单词字符）
-		digitRatio           = 0.8  // 数字字符的token系数
-		punctuationRatio     = 0.5  // 标点符号的token系数
-		otherRatio           = 1.0  // 其他字符的token系数
-		baseOverhead         = 2    // 基础开销（序列开始/结束标记）
+		chineseTokenRatio = 1.6 // 中文字符的平均token系数
+		englishWordRatio  = 1.3 // 英文单词的平均token系数
+		englishCharRatio  = 0.3 // 英文字符的附加系数（用于非单词字符）
+		digitRatio        = 0.8 // 数字字符的token系数
+		punctuationRatio  = 0.5 // 标点符号的token系数
+		otherRatio        = 1.0 // 其他字符的token系数
+		baseOverhead      = 2   // 基础开销（序列开始/结束标记）
 	)
 
 	// 计算各部分token数
@@ -228,7 +249,7 @@ func (tc *TokenCounter) calculateTokens(stats TextStats) int {
 	otherTokens := float64(stats.OtherChars) * otherRatio
 
 	totalTokens := chineseTokens + englishWordTokens + englishCharTokens +
-				   digitTokens + punctuationTokens + otherTokens + baseOverhead
+		digitTokens + punctuationTokens + otherTokens + baseOverhead
 
 	return int(totalTokens)
 }
@@ -281,8 +302,17 @@ func (tc *TokenCounter) adjustEstimation(estimated int, text string, stats TextS
 // CountTokensBatch 批量计算token数量
 func (tc *TokenCounter) CountTokensBatch(ctx context.Context, texts []string) ([]int, error) {
 	results := make([]int, len(texts))
-	
-	// 如果使用Qwen服务，可以批量调用
+
+	// 优先使用DashScope服务
+	if tc.dashscopeService != nil {
+		batchResults, err := tc.dashscopeService.CountTokensBatch(ctx, texts)
+		if err == nil {
+			return batchResults, nil
+		}
+		logger.Warn("DashScope batch token count failed, trying fallback", zap.Error(err))
+	}
+
+	// 备选：使用Qwen服务
 	if tc.qwenClient != nil {
 		// 合并文本批量计算
 		combined := strings.Join(texts, "\n")
@@ -300,6 +330,7 @@ func (tc *TokenCounter) CountTokensBatch(ctx context.Context, texts []string) ([
 			}
 			return results, nil
 		}
+		logger.Warn("Qwen batch token count failed, using fallback", zap.Error(err))
 	}
 
 	// Fallback: 逐个估算
@@ -339,9 +370,9 @@ func NewQwenModelClient(cfg QwenServiceConfig) (*QwenModelClient, error) {
 
 	// 配置HTTP传输层，使用连接池优化并发性能
 	transport := &http.Transport{
-		MaxIdleConns:        100,  // 最大空闲连接数
-		MaxIdleConnsPerHost: 10,   // 每个主机最大空闲连接数
-		MaxConnsPerHost:     20,   // 每个主机最大连接数
+		MaxIdleConns:        100,              // 最大空闲连接数
+		MaxIdleConnsPerHost: 10,               // 每个主机最大空闲连接数
+		MaxConnsPerHost:     20,               // 每个主机最大连接数
 		IdleConnTimeout:     90 * time.Second, // 空闲连接超时
 	}
 
@@ -455,7 +486,7 @@ func (c *QwenModelClient) GenerateWithRetry(ctx context.Context, prompt string, 
 		}
 		lastErr = err
 		// 如果是网络错误或超时，等待后重试
-		if i < maxRetries-1 && (strings.Contains(err.Error(), "timeout") || 
+		if i < maxRetries-1 && (strings.Contains(err.Error(), "timeout") ||
 			strings.Contains(err.Error(), "connection") ||
 			strings.Contains(err.Error(), "network")) {
 			time.Sleep(time.Duration(i+1) * 2 * time.Second)
@@ -472,12 +503,12 @@ func (c *QwenModelClient) GenerateWithRetry(ctx context.Context, prompt string, 
 // generateOnce 单次调用Qwen服务生成文本
 func (c *QwenModelClient) generateOnce(ctx context.Context, prompt string, maxTokens int) (string, error) {
 	url := fmt.Sprintf("%s/api/v1/generate", c.baseURL)
-	
+
 	reqBody := map[string]interface{}{
-		"prompt":    prompt,
+		"prompt":     prompt,
 		"max_tokens": maxTokens,
 	}
-	
+
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
 		return "", fmt.Errorf("marshal request failed: %w", err)
@@ -518,7 +549,7 @@ func (c *QwenModelClient) generateOnce(ctx context.Context, prompt string, maxTo
 // HealthCheck 健康检查
 func (c *QwenModelClient) HealthCheck(ctx context.Context) error {
 	url := fmt.Sprintf("%s/health", c.baseURL)
-	
+
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return fmt.Errorf("create request failed: %w", err)
@@ -536,4 +567,3 @@ func (c *QwenModelClient) HealthCheck(ctx context.Context) error {
 
 	return nil
 }
-
