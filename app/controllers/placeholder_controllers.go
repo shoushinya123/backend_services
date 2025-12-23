@@ -170,12 +170,12 @@ func (c *TokenController) GetRecords() {}
 // ConversationController 对话控制器
 type ConversationController struct {
 	BaseController
-	conversationService *services.ConversationService
+	aiChatService *services.AIChatService
 }
 
 func (c *ConversationController) Prepare() {
-	if c.conversationService == nil {
-		c.conversationService = services.NewConversationService()
+	if c.aiChatService == nil {
+		c.aiChatService = services.NewAIChatService()
 	}
 }
 
@@ -187,7 +187,7 @@ func (c *ConversationController) CreateConversation() {
 		return
 	}
 
-	conversation, err := c.conversationService.CreateConversation(&req)
+	conversation, err := c.aiChatService.CreateConversation(&req)
 	if err != nil {
 		c.JSONError(http.StatusInternalServerError, "Failed to create conversation: "+err.Error())
 		return
@@ -204,7 +204,7 @@ func (c *ConversationController) SendMessage() {
 		return
 	}
 
-	response, err := c.conversationService.SendMessage(&req)
+	response, err := c.aiChatService.SendMessage(&req)
 	if err != nil {
 		c.JSONError(http.StatusInternalServerError, "Failed to send message: "+err.Error())
 		return
@@ -228,7 +228,7 @@ func (c *ConversationController) GetConversation() {
 		return
 	}
 
-	conversation, err := c.conversationService.GetConversation(uint(conversationID), userID)
+	conversation, err := c.aiChatService.GetConversation(uint(conversationID), userID)
 	if err != nil {
 		c.JSONError(http.StatusNotFound, "Conversation not found")
 		return
@@ -255,7 +255,7 @@ func (c *ConversationController) GetMessages() {
 	limit := 50 // 默认值
 	offset := 0 // 默认值
 
-	messages, err := c.conversationService.GetMessages(uint(conversationID), userID, limit, offset)
+	messages, err := c.aiChatService.GetMessages(uint(conversationID), userID, limit, offset)
 	if err != nil {
 		c.JSONError(http.StatusInternalServerError, "Failed to get messages")
 		return
@@ -367,12 +367,41 @@ func (c *BookController) Update()        {}
 func (c *BookController) Delete()        {}
 func (c *BookController) GetContent()    {}
 
-// AIChatController AI聊天控制器（占位符）
+// AIChatController AI聊天控制器
 type AIChatController struct {
 	BaseController
+	aiChatService *services.AIChatService
 }
 
-func (c *AIChatController) Chat()                  {}
+func (c *AIChatController) Prepare() {
+	if c.aiChatService == nil {
+		c.aiChatService = services.NewAIChatService()
+	}
+}
+
+// Chat 执行聊天
+func (c *AIChatController) Chat() {
+	var req services.AIChatRequest
+	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &req); err != nil {
+		c.JSONError(http.StatusBadRequest, "Invalid request: "+err.Error())
+		return
+	}
+
+	userID, ok := c.getAuthenticatedUserID()
+	if !ok {
+		c.JSONError(http.StatusUnauthorized, "用户未认证")
+		return
+	}
+
+	req.UserID = userID
+	response, err := c.aiChatService.Chat(&req)
+	if err != nil {
+		c.JSONError(http.StatusInternalServerError, "Failed to chat: "+err.Error())
+		return
+	}
+
+	c.JSONSuccess(response)
+}
 func (c *AIChatController) ChatStream()            {}
 func (c *AIChatController) GetHistory()            {}
 func (c *AIChatController) GetSessions()           {}
