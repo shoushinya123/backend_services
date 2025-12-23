@@ -6,7 +6,6 @@
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-Ready-blue)](https://kubernetes.io/)
 [![Build Status](https://img.shields.io/badge/Build-Passing-green)]()
 [![Security](https://img.shields.io/badge/Security-Enterprise-blue)]()
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
 > 🚀 **一款基于Go微服务架构的企业级AI知识库平台，支持超长文本RAG处理、混合搜索和插件化扩展，为企业提供完整的AI知识管理解决方案**
 
