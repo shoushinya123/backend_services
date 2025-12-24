@@ -35,6 +35,10 @@
 
 Backend Services 是专为现代企业打造的下一代AI知识库微服务平台，专注于解决企业级AI应用的知识管理难题。通过创新的超长文本处理技术和先进的RAG（Retrieval-Augmented Generation）架构，为企业提供完整的AI知识管理解决方案。
 
+### 🚀  技术架构
+
+![Uploading DashScope AI Knowledge Base-2025-12-24-095852.png…]()
+
 ### 🎯 核心定位
 
 **企业级AI基础设施** | **知识管理平台** | **RAG服务引擎**
