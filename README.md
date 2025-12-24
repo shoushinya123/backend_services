@@ -37,7 +37,8 @@ Backend Services 是专为现代企业打造的下一代AI知识库微服务平�
 
 ### 🚀  技术架构
 
-![Uploading DashScope AI Knowledge Base-2025-12-24-095852.png…]()
+<img width="2782" height="2396" alt="image" src="https://github.com/user-attachments/assets/06f8df03-8743-4141-bef0-2946d7bfc24f" />
+
 
 ### 🎯 核心定位
 
